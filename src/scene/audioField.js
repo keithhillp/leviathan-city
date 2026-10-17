@@ -8,11 +8,15 @@ const HISTORY = 128 // ~2s of history
 const BALANCE_COLUMN = BANDS
 const WEIGHT_COLUMN = BANDS + 1
 const CALM_COLUMN = BANDS + 2
-const COLUMNS = BANDS + 4
+const SNARE_COLUMN = BANDS + 3 // snare envelope
+const SNARE_SIDE_COLUMN = BANDS + 4 // which side of the street it's on (0 left, 1 right)
+const HAT_COLUMN = BANDS + 5 // hat / light percussion envelope
+const UNIFY_COLUMN = BANDS + 6 // heavy bass push: windows go to one colour
+const COLUMNS = BANDS + 8
 const STEREO_AMOUNT = 0.6 // how far the louder side brightens and the other dims
 const STEP = 1 / 60
-const MIN_GAIN = 0.5
-const GAIN_RANGE = 1.5
+const MIN_GAIN = 0.3 // between hits lights dim to this...
+const GAIN_RANGE = 1.7 // ...and peaks add up to this much on top
 
 // Keeps the last ~2s of band levels in a texture so lights can look up the
 // level "as it was" when the sound reached them. Pulses sweep from `origin`
@@ -39,8 +43,8 @@ export class AudioField {
     return this.uniforms.uAudioOrigin.value
   }
 
-  // Takes AudioAnalysis's bands, stereo ({ balance, weight }) and calm.
-  update(delta, { bands, stereo, calm }, playing) {
+  // Takes AudioAnalysis's bands, stereo ({ balance, weight }), calm, drums and unify.
+  update(delta, { bands, stereo, calm, drums, unify }, playing) {
     this.accumulator += delta
     while (this.accumulator >= STEP) {
       this.accumulator -= STEP
@@ -49,6 +53,10 @@ export class AudioField {
       this.data[BALANCE_COLUMN] = ((stereo.balance + 1) / 2) * 255
       this.data[WEIGHT_COLUMN] = stereo.weight * 255
       this.data[CALM_COLUMN] = calm * 255
+      this.data[SNARE_COLUMN] = drums.snare * 255
+      this.data[SNARE_SIDE_COLUMN] = drums.snareSide * 255
+      this.data[HAT_COLUMN] = drums.hat * 255
+      this.data[UNIFY_COLUMN] = unify * 255
       this.texture.needsUpdate = true
     }
     const active = this.uniforms.uAudioActive
@@ -103,6 +111,23 @@ float audioLevel(float band) {
 // 0..1, how quiet the passage was when the sound reached this point.
 float audioCalm() {
   return audioColumn(${CALM_COLUMN.toFixed(1)});
+}
+
+// Snare flash, ping-ponging between the two sides of the street.
+float audioSnare() {
+  float side = vAudioWorld.x < uAudioOrigin.x ? 0.0 : 1.0;
+  float hitSide = step(0.5, audioColumn(${SNARE_SIDE_COLUMN.toFixed(1)}));
+  return audioColumn(${SNARE_COLUMN.toFixed(1)}) * (1.0 - abs(side - hitSide)) * uAudioActive;
+}
+
+// 0..1: how far this point's lights should go to one shared colour.
+float audioUnify() {
+  return audioColumn(${UNIFY_COLUMN.toFixed(1)}) * uAudioActive;
+}
+
+// Hat / light percussion twinkle.
+float audioHat() {
+  return audioColumn(${HAT_COLUMN.toFixed(1)}) * uAudioActive;
 }
 
 // Brightens the side of the street the music is panned to (left of the

@@ -39,7 +39,7 @@ export function useAudioPlayer(loadTracks) {
     // Tuned for loud, heavily compressed masters like drum and bass: the
     // default -30 dB ceiling pins most bands at full, and 0.8 smoothing
     // smears 170+ BPM drums together.
-    node.minDecibels = -85
+    node.minDecibels = -95 // keeps detail in quiet passages
     node.maxDecibels = -20
     node.smoothingTimeConstant = 0.6
     return node

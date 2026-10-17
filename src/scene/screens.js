@@ -68,7 +68,7 @@ export class Screen {
     resolution = PX_PER_UNIT,
     heavyGrime = true,
     flicker = false,
-    pulse = false, // brightness follows the bass
+    pulse = false, // brightness follows the bass (and gently the vocals)
   }) {
     let pxW = Math.round(width * resolution)
     let pxH = Math.round(height * resolution)
@@ -157,7 +157,9 @@ export class Screen {
     this.wasGlitching = glitching
 
     let level = this.brightness
-    if (this.pulse) level *= 1 + analysis.levels.bass * 0.25
+    if (this.pulse) {
+      level *= 1 + analysis.levels.bass * 0.25 + analysis.levels.voice * 0.12 + analysis.drums.snare * 0.2
+    }
     if (this.flicker) {
       if (this.flickerTime <= 0 && Math.random() < FLICKER_CHANCE * delta) {
         this.flickerTime = 0.1 + Math.random() * 0.4

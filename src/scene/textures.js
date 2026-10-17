@@ -13,6 +13,11 @@ const TRIGGER_COLORS = [...LIT_COLORS, '#9fe8ff', '#c8ffd8']
 const TRIGGER_CHANCE = 0.9
 const MIN_THRESHOLD = 0.3
 const MAX_THRESHOLD = 0.75
+// Share of windows that flash on snares / twinkle on hats (any window, lit or not).
+const SNARE_SHARE = 0.2
+const HAT_SHARE = 0.2
+const SNARE_ROLE = 128 // blue channel values in the band map
+const HAT_ROLE = 255
 
 function makeCanvas(size) {
   const canvas = document.createElement('canvas')
@@ -65,20 +70,22 @@ function makeFacade(rng, litChance) {
       c.fillRect(x, y, w, h)
 
       // Audio data per cell, read by the window shader: red = band,
-      // green = trigger threshold. Math.random keeps the seeded layout
-      // unchanged.
+      // green = trigger threshold, blue = drum role (window area only).
+      // Math.random keeps the seeded layout unchanged.
       const band = Math.floor(Math.random() * BANDS) / (BANDS - 1)
       let threshold = 0
 
       if (floorOccupied && rng() < litChance) {
         const color = LIT_COLORS[Math.floor(rng() * LIT_COLORS.length)]
         const blind = rng() < 0.4 ? h * (0.2 + rng() * 0.5) : 0
-        for (const ctx of [c, g]) {
-          ctx.globalAlpha = 0.55 + rng() * 0.45
-          ctx.fillStyle = color
-          ctx.fillRect(x, y + blind, w, h - blind)
-          ctx.globalAlpha = 1
-        }
+        // Lit only in the glow layer: the surface stays dark glass, so all of the
+        // window's light comes from the audio-driven emissive. (rng() is still
+        // drawn twice, as it was for both layers, so the seeded layout is unchanged.)
+        rng()
+        g.globalAlpha = 0.55 + rng() * 0.45
+        g.fillStyle = color
+        g.fillRect(x, y + blind, w, h - blind)
+        g.globalAlpha = 1
         // Window mullion
         c.fillStyle = g.fillStyle = '#111'
         c.fillRect(x + w / 2 - 1, y, 2, h)
@@ -91,13 +98,24 @@ function makeFacade(rng, litChance) {
         t.fillRect(x + w / 2 - 1, y, 2, h)
       }
 
-      b.fillStyle = `rgb(${Math.round(band * 255)}, ${Math.round(threshold * 255)}, 0)`
+      const cellColour = `${Math.round(band * 255)}, ${Math.round(threshold * 255)}`
+      b.fillStyle = `rgb(${cellColour}, 0)`
       b.fillRect(col * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX)
+      const roll = Math.random()
+      const role = roll < SNARE_SHARE ? SNARE_ROLE : roll < SNARE_SHARE + HAT_SHARE ? HAT_ROLE : 0
+      if (role) {
+        b.fillStyle = `rgb(${cellColour}, ${role})`
+        b.fillRect(x, y, w, h)
+      }
     }
   }
 
   const bandMap = new THREE.CanvasTexture(bandCanvas) // data, so no colour space
   bandMap.wrapS = bandMap.wrapT = THREE.RepeatWrapping
+  // Exact per-cell values: blending would mix roles (e.g. a hat window fading
+  // into the wall would read as a snare one).
+  bandMap.magFilter = bandMap.minFilter = THREE.NearestFilter
+  bandMap.generateMipmaps = false
   return {
     map: toTexture(colorCanvas),
     emissiveMap: toTexture(glowCanvas),
