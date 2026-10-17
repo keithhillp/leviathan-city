@@ -13,6 +13,7 @@ import { createTrain } from '../scene/train.js'
 import { createSky } from '../scene/sky.js'
 import { createWetness } from '../scene/wetness.js'
 import { createEyebots } from '../scene/eyebots.js'
+import { createFires } from '../scene/fires.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -34,6 +35,7 @@ const COORDS_INTERVAL = 0.1 // seconds between coordinate readout updates
 // Which CCTV camera is live: C cycles, 1-9 jump straight to one.
 const cameraIndex = ref(0)
 const activeCamera = () => CAMERAS[cameraIndex.value]
+const lookAhead = new THREE.Vector3()
 
 // Free camera for finding new viewpoints: toggle with F, or start with ?freecam.
 const freeCam = ref(new URLSearchParams(window.location.search).has('freecam'))
@@ -45,7 +47,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots
+let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -74,13 +76,20 @@ watch(ps1, (on) => {
 watch(freeCam, (on) => {
   if (!controls) return
   controls.enabled = on
-  // Start orbiting from wherever the fixed view is looking.
-  if (on) controls.target.copy(activeCamera().target)
+  // Start orbiting from wherever the current view is looking.
+  if (on) controls.target.copy(camera.getWorldDirection(lookAhead).multiplyScalar(20).add(camera.position))
 })
+
+// Each camera can have its own lens; portrait screens always get a wide one.
+function applyLens() {
+  camera.fov = camera.aspect < 1 ? PORTRAIT_FOV : (activeCamera().fov ?? FOV)
+  camera.updateProjectionMatrix()
+}
 
 // Cutting to a camera leaves the free camera.
 watch(cameraIndex, () => {
   freeCam.value = false
+  if (camera) applyLens()
 })
 
 onMounted(() => {
@@ -99,8 +108,10 @@ onMounted(() => {
   scene.fog = new THREE.FogExp2(HAZE, 0.006)
 
   camera = new THREE.PerspectiveCamera(FOV, el.clientWidth / el.clientHeight, 0.1, 2000)
-  camera.position.copy(activeCamera().position)
-  camera.lookAt(activeCamera().target)
+  if (activeCamera().position) {
+    camera.position.copy(activeCamera().position)
+    camera.lookAt(activeCamera().target)
+  }
 
   // Overcast sky fill plus a cold, weak key light from above.
   scene.add(new THREE.HemisphereLight(0x8a9aa4, 0x1a1c1c, 0.5))
@@ -133,8 +144,9 @@ onMounted(() => {
   sky = createSky(scene)
   scene.add(sky.group)
 
-  eyebots = createEyebots({ patrol: PATROL })
-  scene.add(eyebots.group)
+  fires = createFires()
+  eyebots = createEyebots({ patrol: PATROL, fires })
+  scene.add(eyebots.group, fires.group)
 
   wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
 
@@ -162,8 +174,7 @@ onMounted(() => {
     camera.aspect = el.clientWidth / el.clientHeight
     ps1Pass.uniforms.aspect.value = camera.aspect
     ps1Style.setAspect(camera.aspect)
-    camera.fov = camera.aspect < 1 ? PORTRAIT_FOV : FOV
-    camera.updateProjectionMatrix()
+    applyLens()
     renderer.setSize(el.clientWidth, el.clientHeight)
     composer.setSize(el.clientWidth, el.clientHeight)
   })
@@ -184,6 +195,7 @@ onMounted(() => {
     train.update(delta)
     sky.update(delta, analysis)
     eyebots.update(delta, elapsed)
+    fires.update(delta, elapsed)
     rain.update(delta, camera.position)
 
     if (freeCam.value) {
@@ -192,6 +204,8 @@ onMounted(() => {
         sinceCoords = 0
         coords.value = `position: ${fmt(camera.position)}\ntarget:   ${fmt(controls.target)}`
       }
+    } else if (activeCamera().follow === 'eyebot') {
+      eyebots.viewpoint(activeCamera().bot, camera.position, camera.quaternion)
     } else {
       const { position, target } = activeCamera()
       camera.position.set(
@@ -231,6 +245,7 @@ onBeforeUnmount(() => {
 <template>
   <div ref="container" class="scene"></div>
   <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" />
+  <div v-if="CAMERAS[cameraIndex].follow && !freeCam" class="reticle"></div>
   <div v-if="freeCam" class="coords">
     <div class="label">FREE CAM · F to exit · drag rotate · right-drag pan · scroll zoom</div>
     <pre>{{ coords }}</pre>
@@ -242,6 +257,27 @@ onBeforeUnmount(() => {
 .scene {
   width: 100%;
   height: 100%;
+}
+.reticle {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 64px;
+  height: 64px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* Corner brackets only. */
+  background:
+    linear-gradient(#ff4030, #ff4030) top left / 14px 2px,
+    linear-gradient(#ff4030, #ff4030) top left / 2px 14px,
+    linear-gradient(#ff4030, #ff4030) top right / 14px 2px,
+    linear-gradient(#ff4030, #ff4030) top right / 2px 14px,
+    linear-gradient(#ff4030, #ff4030) bottom left / 14px 2px,
+    linear-gradient(#ff4030, #ff4030) bottom left / 2px 14px,
+    linear-gradient(#ff4030, #ff4030) bottom right / 14px 2px,
+    linear-gradient(#ff4030, #ff4030) bottom right / 2px 14px;
+  background-repeat: no-repeat;
+  opacity: 0.8;
 }
 .coords {
   position: fixed;

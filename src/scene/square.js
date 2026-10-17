@@ -36,6 +36,8 @@ export const CAMERAS = [
     position: new THREE.Vector3(2.26, 48.82, 101.03),
     target: new THREE.Vector3(6.0, 22.51, -54.6),
   },
+  // First-person feed from an eyebot (`bot` picks which one), with a wider lens.
+  { name: 'EYEBOT LIVE FEED', follow: 'eyebot', bot: 0, fov: 70 },
 ]
 
 // Traffic runs down the plaza between a tunnel in the tower's base and the
@@ -72,10 +74,6 @@ export const BRIDGE = {
 }
 const BRIDGE_MARKER = new THREE.Color(1.6, 0.04, 0.03)
 BRIDGE.deckY = BRIDGE.underside + BRIDGE.thickness
-
-// Where the eyebots patrol: in front of the side buildings' facades (at
-// ±wallX), above the bridge, train and portal arches.
-export const PATROL = { wallX: PLAZA_HALF_WIDTH, z: [-64, 40], y: [17, 45] }
 export const ROAD = {
   minZ: TOWER_FACE_Z - 8, // inside the tunnel
   maxZ: 70, // behind the camera
@@ -156,6 +154,44 @@ const SCREENS = [
   front(0, TOWER_FACE_Z, HERO.bottom - 3.2, HERO.width, 2.4, content.ticker()),
 ]
 
+const FLOOR_HEIGHT = 3.5 // matches the city's floors
+
+// Windows the eyebots can scan: every window on the side buildings' street
+// faces between these heights (above the bridge, train and portal arches),
+// except those behind an advert. Windows sit on a WINDOW_SPACING x
+// FLOOR_HEIGHT grid from each building's edges (all side buildings are a
+// whole number of windows long, so it lines up from either end).
+const PATROL_HEIGHT = [17, 45]
+const WINDOW_SPACING = 3
+const SCREEN_MARGIN = 0.6 // clearance around a screen's frame
+
+function patrolWindows() {
+  const windows = []
+  for (const building of SQUARE.buildings) {
+    if (!/^[LR]\d$/.test(building.name)) continue
+    const side = building.name[0] === 'L' ? -1 : 1
+    const faceX = side * PLAZA_HALF_WIDTH
+    const height = building.floors * FLOOR_HEIGHT
+    for (let floor = 0; floor < building.floors; floor++) {
+      const y = (floor + 0.5) * FLOOR_HEIGHT
+      if (y < PATROL_HEIGHT[0] || y > Math.min(PATROL_HEIGHT[1], height - FLOOR_HEIGHT / 2)) continue
+      for (let z = building.z0 + WINDOW_SPACING / 2; z < building.z1; z += WINDOW_SPACING) {
+        const behindScreen = SCREENS.some(
+          ({ position: [sx, sy, sz], rotation, w, h }) =>
+            rotation !== 0 &&
+            Math.sign(sx) === side &&
+            Math.abs(z - sz) < w / 2 + SCREEN_MARGIN &&
+            Math.abs(y - sy) < h / 2 + SCREEN_MARGIN,
+        )
+        if (!behindScreen) windows.push({ x: faceX, y, z, side })
+      }
+    }
+  }
+  return windows
+}
+
+export const PATROL = { windows: patrolWindows() }
+
 // Faint coloured spill from the larger adverts: [position, index into SCREENS].
 const SPILL_LIGHTS = [
   [[-14, 14, -8], 2],
@@ -174,7 +210,6 @@ const SURGE = { share: 0.75, beats: 0.75, spread: 0.25 }
 // `lift` is the gap between the roof and the letters, `setback` how far
 // behind the front edge it stands.
 const CORPORATE_SIGN = { width: 54, lift: 1.5, setback: 1, brightness: 2.6, light: 400 }
-const FLOOR_HEIGHT = 3.5 // matches the city's floors
 
 // Glowing white letters on a transparent background, so the tower's windows
 // show between them. Tube-like: a soft halo with a hot white core.
