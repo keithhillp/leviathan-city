@@ -23,8 +23,8 @@ export const CAMERAS = [
   },
   {
     name: 'PLAZA OVERWATCH',
-    position: new THREE.Vector3(-13.95, 26.0, 17.89),
-    target: new THREE.Vector3(-1.56, 11.49, -63.91),
+    position: new THREE.Vector3(-12.06, 22.97, 27.73),
+    target: new THREE.Vector3(4.16, 9.21, -62.46),
   },
   {
     name: 'STREET LEVEL',
@@ -53,6 +53,25 @@ const LINE = { width: 0.15, dash: 3, gap: 6, y: 0.08 }
 const PAVEMENT_HEIGHT = 0.18
 
 const TUNNEL = { width: ROAD_OUTER * 2 + 2, height: 7 }
+
+// Rail bridge crossing the road part-way down the plaza, well clear of the
+// tower. Its ends run into buildings L2 and R2, which hide where the train
+// comes and goes, so `z` must stay where both of them stand (about -17..2).
+export const BRIDGE = {
+  z: -10,
+  underside: 8,
+  thickness: 1.8,
+  depth: 8,
+  span: 76, // x -38..38, building edge to building edge
+  tracks: [-1.6, 1.6], // offsets from the bridge centre line
+  pillars: [-17.4, 0, 17.4], // on the pavements and the reservation
+  markerSpacing: 4, // dark red lights along both faces of the deck
+  // Arched black openings where the tracks meet the buildings: total height,
+  // how much narrower than the deck, frame thickness and how far it projects.
+  portal: { height: 6, inset: 1, frame: 0.6, depth: 1.2 },
+}
+const BRIDGE_MARKER = new THREE.Color(1.6, 0.04, 0.03)
+BRIDGE.deckY = BRIDGE.underside + BRIDGE.thickness
 export const ROAD = {
   minZ: TOWER_FACE_Z - 8, // inside the tunnel
   maxZ: 70, // behind the camera
@@ -83,7 +102,7 @@ export const SQUARE = {
 
 // As wide as the plaza allows (the side buildings would hide anything wider)
 // and tall enough for a big, readable track title above the bars.
-const HERO = { x: 0, bottom: 12, width: 38, height: 30 }
+const HERO = { x: 0, bottom: 20, width: 38, height: 30 } // raised clear of the rail bridge
 
 const content = {
   ads: () => (ctx, w, h) => new AdsContent(ctx, w, h),
@@ -130,7 +149,7 @@ const SCREENS = [
   right(-6, 18, 24, 14, content.ads()),
   right(-61, 14, 16, 22, content.ads(), { flicker: true }),
   // Under the hero
-  front(0, TOWER_FACE_Z, 8.8, HERO.width, 2.4, content.ticker()),
+  front(0, TOWER_FACE_Z, HERO.bottom - 3.2, HERO.width, 2.4, content.ticker()),
 ]
 
 // Faint coloured spill from the larger adverts: [position, index into SCREENS].
@@ -183,6 +202,33 @@ const HERO_GLOW_BASE = 1500
 const HERO_GLOW_BASS = 7000
 const WARM = new THREE.Color(1, 0.55, 0.15)
 const COLD = new THREE.Color(0.4, 0.85, 1)
+
+// Opening with straight sides and a semicircular top, base at y = 0.
+function archShape(halfWidth, straight) {
+  const shape = new THREE.Shape()
+  shape.moveTo(-halfWidth, 0)
+  shape.lineTo(halfWidth, 0)
+  shape.lineTo(halfWidth, straight)
+  shape.absarc(0, straight, halfWidth, 0, Math.PI, false)
+  shape.closePath()
+  return shape
+}
+
+// The U-shaped band around archShape, open at the bottom where the deck is.
+function archFrameShape(halfWidth, thickness, straight) {
+  const outer = halfWidth + thickness
+  const shape = new THREE.Shape()
+  shape.moveTo(-outer, 0)
+  shape.lineTo(-halfWidth, 0)
+  shape.lineTo(-halfWidth, straight)
+  shape.absarc(0, straight, halfWidth, Math.PI, 0, true)
+  shape.lineTo(halfWidth, 0)
+  shape.lineTo(outer, 0)
+  shape.lineTo(outer, straight)
+  shape.absarc(0, straight, outer, 0, Math.PI, false)
+  shape.closePath()
+  return shape
+}
 
 export function createSquare() {
   const group = new THREE.Group()
@@ -255,6 +301,72 @@ export function createSquare() {
   const lintel = new THREE.Mesh(new THREE.BoxGeometry(TUNNEL.width + 2, 1.2, 0.8), frameMaterial)
   lintel.position.set(0, TUNNEL.height + 0.6, TOWER_FACE_Z + 0.3)
   group.add(tunnel, lintel)
+
+  // Concrete deck, parapets and pillars, rails on top, lamps underneath.
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x3a3c3a, roughness: 0.9 })
+  const { z: bz, underside, thickness, depth, span, deckY } = BRIDGE
+  const bridge = new THREE.Mesh(
+    mergeGeometries([
+      new THREE.BoxGeometry(span, thickness, depth).translate(0, underside + thickness / 2, bz),
+      ...[-1, 1].map((side) =>
+        new THREE.BoxGeometry(span, 1.3, 0.35).translate(0, deckY + 0.65, bz + side * (depth / 2 - 0.175)),
+      ),
+      ...BRIDGE.pillars.map((x) => new THREE.BoxGeometry(1.6, underside, 3).translate(x, underside / 2, bz)),
+    ]),
+    concrete,
+  )
+  const rails = new THREE.Mesh(
+    mergeGeometries(
+      BRIDGE.tracks.flatMap((track) =>
+        [-0.75, 0.75].map((gauge) =>
+          new THREE.BoxGeometry(span, 0.15, 0.12).translate(0, deckY + 0.08, bz + track + gauge),
+        ),
+      ),
+    ),
+    frameMaterial,
+  )
+  const lampXs = []
+  for (let x = -span / 2 + 6; x < span / 2 - 4; x += 8) lampXs.push(x)
+  const lamps = new THREE.Mesh(
+    mergeGeometries(lampXs.map((x) => new THREE.BoxGeometry(1.2, 0.12, 0.5).translate(x, underside - 0.06, bz))),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(3, 2.2, 1.2) }),
+  )
+  const markers = []
+  for (let x = -span / 2 + 2; x <= span / 2 - 2; x += BRIDGE.markerSpacing) {
+    for (const side of [-1, 1]) {
+      markers.push(new THREE.BoxGeometry(0.5, 0.3, 0.1).translate(x, underside + thickness / 2, bz + side * (depth / 2 + 0.05)))
+    }
+  }
+  const markerLights = new THREE.Mesh(
+    mergeGeometries(markers),
+    new THREE.MeshBasicMaterial({ color: BRIDGE_MARKER }),
+  )
+  group.add(bridge, rails, lamps, markerLights)
+
+  // Arched black openings in the buildings either side, like the road tunnel,
+  // so the train disappears into a hole rather than through the windows. The
+  // arch stands proud of the wall and the hole sits inside it, clear of the
+  // facade, so the building can't poke through at the edges.
+  const { height: portalHeight, inset, frame: frameWidth, depth: frameDepth } = BRIDGE.portal
+  const halfWidth = (depth - inset) / 2
+  const straight = portalHeight - halfWidth // walls below the round top
+  const blackout = new THREE.MeshBasicMaterial({ color: 0x000000 })
+  const holeGeometry = new THREE.ShapeGeometry(archShape(halfWidth, straight))
+  const archGeometry = new THREE.ExtrudeGeometry(archFrameShape(halfWidth, frameWidth, straight), {
+    depth: frameDepth,
+    bevelEnabled: false,
+  })
+  for (const side of [-1, 1]) {
+    const faceX = side * PLAZA_HALF_WIDTH
+    const facing = -side * (Math.PI / 2) // towards the plaza
+    const arch = new THREE.Mesh(archGeometry, concrete)
+    arch.rotation.y = facing
+    arch.position.set(faceX + side * 0.2, deckY, bz) // slightly sunk into the wall
+    const hole = new THREE.Mesh(holeGeometry, blackout)
+    hole.rotation.y = facing
+    hole.position.set(faceX - side * 0.4, deckY, bz)
+    group.add(arch, hole)
+  }
 
   const heroLight = new THREE.SpotLight(COLD, HERO_GLOW_BASE, 160, 0.8, 1, 2)
   heroLight.position.copy(heroCenter).z += 3

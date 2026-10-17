@@ -7,7 +7,7 @@ const MARGIN = 60
 const PEAK_FALL = 0.5 // fraction of full height per second
 const TITLE_SIZE = 120
 const TITLE_SPEED = 140 // units per second when the title scrolls
-const TITLE_GAP = '     ◆     '
+const TITLE_GAP = '   ◆   '
 
 function formatTime(seconds) {
   const s = Math.floor(seconds)

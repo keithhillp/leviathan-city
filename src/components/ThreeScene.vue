@@ -7,8 +7,9 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { createCity } from '../scene/city.js'
-import { CAMERAS, ROAD, createSquare } from '../scene/square.js'
+import { BRIDGE, CAMERAS, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
+import { createTrain } from '../scene/train.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -41,7 +42,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style
+let analysis, ps1Pass, ps1Style, train
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -87,6 +88,7 @@ onMounted(() => {
   renderer.setSize(el.clientWidth, el.clientHeight)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.1
+  renderer.localClippingEnabled = true // the train is clipped at the bridge ends
   el.appendChild(renderer.domElement)
 
   scene = new THREE.Scene()
@@ -114,6 +116,13 @@ onMounted(() => {
 
   traffic = createTraffic(ROAD)
   scene.add(traffic.group)
+
+  train = createTrain({
+    deckY: BRIDGE.deckY,
+    tracks: BRIDGE.tracks.map((offset) => BRIDGE.z + offset),
+    clipX: BRIDGE.span / 2,
+  })
+  scene.add(train.group)
 
   rain = createRain()
   scene.add(rain.object)
@@ -161,6 +170,7 @@ onMounted(() => {
     audioField.update(delta, analysis.bands, frame.playing)
     city.update(elapsed)
     traffic.update(delta, camera.position)
+    train.update(delta)
     rain.update(delta, camera.position)
 
     if (freeCam.value) {
