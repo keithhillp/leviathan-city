@@ -12,7 +12,7 @@ const SNARE_COLUMN = BANDS + 3 // snare envelope
 const SNARE_SIDE_COLUMN = BANDS + 4 // which side of the street it's on (0 left, 1 right)
 const HAT_COLUMN = BANDS + 5 // hat / light percussion envelope
 const UNIFY_COLUMN = BANDS + 6 // heavy bass push: windows go to one colour
-const COLUMNS = BANDS + 8
+const COLUMNS = BANDS + 12
 const STEREO_AMOUNT = 0.6 // how far the louder side brightens and the other dims
 const STEP = 1 / 60
 const MIN_GAIN = 0.3 // between hits lights dim to this...
@@ -20,8 +20,20 @@ const GAIN_RANGE = 1.7 // ...and peaks add up to this much on top
 export const HISTORY_SECONDS = HISTORY * STEP
 
 // Shapes the delay can take (see patterns.js): `sweep` along an axis, `ripple`
-// out from a point, `outward` from a plane both ways, `scatter` per window.
-export const PATTERN_TYPES = { sweep: 0, ripple: 1, outward: 2, scatter: 3 }
+// out from a point, `outward` from a plane both ways, `scatter` per window,
+// `spiral` arms around a vertical axis, `rings` repeating ripples, `stripes`
+// repeating bands, `implode` closing in on a point, `blocks` per chunk.
+export const PATTERN_TYPES = {
+  sweep: 0,
+  ripple: 1,
+  outward: 2,
+  scatter: 3,
+  spiral: 4,
+  rings: 5,
+  stripes: 6,
+  implode: 7,
+  blocks: 8,
+}
 
 // Keeps the last ~2s of band levels in a texture so lights can look up the
 // level "as it was" when the sound reached them. How long the sound takes to
@@ -47,6 +59,11 @@ export class AudioField {
       uPatternB: { value: new THREE.Vector4() },
       uPatternAxisB: { value: new THREE.Vector4(0, 0, 1, 90) },
       uPatternMix: { value: 0 },
+      // Colour palette (set by colours.js): four colours looped round, how far
+      // it's slid across the windows, and how strongly windows take it.
+      uPalette: { value: Array.from({ length: 4 }, () => new THREE.Color(1, 1, 1)) },
+      uPaletteShift: { value: 0 },
+      uPaletteTint: { value: 0 },
     }
   }
 
@@ -106,30 +123,56 @@ uniform vec4 uPatternAxisA;
 uniform vec4 uPatternB;
 uniform vec4 uPatternAxisB;
 uniform float uPatternMix;
+uniform vec3 uPalette[4];
+uniform float uPaletteShift;
+uniform float uPaletteTint;
 varying vec3 vAudioWorld;
 
-// Roughly one value per window (3 wide, 3.5 tall).
-float patternHash(vec3 p) {
-  vec3 cell = floor(p / vec3(3.0, 3.5, 3.0));
+// Colour at position t around the palette loop (wraps), scaled to brightness 1
+// (capped so deep blues don't blow out).
+vec3 paletteAt(float t) {
+  float scaled = fract(t + uPaletteShift) * 4.0;
+  int i = int(floor(scaled));
+  vec3 colour = mix(uPalette[i], uPalette[(i + 1) % 4], fract(scaled));
+  return colour / max(dot(colour, vec3(0.299, 0.587, 0.114)), 0.25);
+}
+
+// A stable random value per cell of the given size.
+float patternHash(vec3 p, vec3 size) {
+  vec3 cell = floor(p / size);
   return fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
 }
 
 // 0..1 of the history: how long ago this point "hears" the music.
 float patternDelay(vec4 pattern, vec4 axis) {
+  const float history = ${HISTORY_SECONDS.toFixed(4)};
   vec3 offset = vAudioWorld - pattern.xyz;
-  if (pattern.w > 2.5) return patternHash(vAudioWorld) * axis.w / ${HISTORY_SECONDS.toFixed(4)};
-  float distance = pattern.w < 0.5 ? dot(offset, axis.xyz)
-    : pattern.w < 1.5 ? length(offset)
-    : abs(dot(offset, axis.xyz));
-  return clamp(distance / (axis.w * ${HISTORY_SECONDS.toFixed(4)}), 0.0, 1.0);
+  float type = pattern.w;
+  float spread = axis.w / history; // for the repeating / random shapes
+  if (type < 0.5) return clamp(dot(offset, axis.xyz) / (axis.w * history), 0.0, 1.0);
+  if (type < 1.5) return clamp(length(offset) / (axis.w * history), 0.0, 1.0);
+  if (type < 2.5) return clamp(abs(dot(offset, axis.xyz)) / (axis.w * history), 0.0, 1.0);
+  if (type < 3.5) return patternHash(vAudioWorld, vec3(3.0, 3.5, 3.0)) * spread; // one per window
+  if (type < 4.5) {
+    float angle = atan(offset.z, offset.x) / 6.2832 + 0.5;
+    return fract(angle * axis.x + length(offset.xz) * axis.y) * spread;
+  }
+  if (type < 5.5) return fract(length(offset) * axis.x) * spread;
+  if (type < 6.5) return fract(dot(offset, axis.xyz)) * spread;
+  if (type < 7.5) return clamp((axis.x - length(offset)) / (axis.w * history), 0.0, 1.0);
+  return patternHash(vAudioWorld, vec3(12.0)) * spread; // building-sized chunks
 }
 
 float audioDelay() {
   return mix(patternDelay(uPatternA, uPatternAxisA), patternDelay(uPatternB, uPatternAxisB), uPatternMix);
 }
 
+// Worked out once per fragment and reused by every lookup below.
+float audioDelayCache = -1.0;
+
 float audioColumn(float column) {
-  float delay = audioDelay();
+  if (audioDelayCache < 0.0) audioDelayCache = audioDelay();
+  float delay = audioDelayCache;
   vec2 uv = vec2(
     (column + 0.5) / ${COLUMNS.toFixed(1)},
     delay * ${(HISTORY - 1) / HISTORY} + ${0.5 / HISTORY}

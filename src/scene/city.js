@@ -18,16 +18,12 @@ const SODIUM = new THREE.Color(1, 0.6, 0.25)
 // How much windows follow the kick rather than their own band (0..1).
 const WINDOW_SYNC = 0.65
 const CALM_WINDOW_SYNC = 0.15 // in quiet passages windows follow their own band
-const SNARE_FLASH = new THREE.Color(1.8, 2, 2.3) // cold white
-const HAT_FLASH = new THREE.Color(0.7, 1.4, 1.6) // pale cyan
-// The one colour windows go to on heavy bass pushes (deep storm red, to match
-// the sky). Only the hue is used; each window keeps its own brightness.
-const UNIFY_COLOUR = new THREE.Color(1, 0.12, 0.06)
-const LUMA = new THREE.Vector3(0.299, 0.587, 0.114)
-const unifyTint = UNIFY_COLOUR.clone().multiplyScalar(
-  1 / new THREE.Vector3(UNIFY_COLOUR.r, UNIFY_COLOUR.g, UNIFY_COLOUR.b).dot(LUMA),
-)
+// Windows take their colour from the palette (colours.js) by the frequency
+// they listen to; only the hue is used, so each keeps its own brightness.
+// The heaviest bass pushes still turn everything storm red.
+const STORM = new THREE.Color(1, 0.08, 0.04)
 const glsl = (colour) => `vec3(${colour.r.toFixed(2)}, ${colour.g.toFixed(2)}, ${colour.b.toFixed(2)})`
+const storm = STORM.clone().multiplyScalar(1 / (STORM.r * 0.299 + STORM.g * 0.587 + STORM.b * 0.114))
 
 function solidColor(geometry, color) {
   const count = geometry.attributes.position.count
@@ -241,16 +237,19 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
           totalEmissiveRadiance += texture2D(uTriggerMap, vEmissiveMapUv).rgb
             * emissive * audioTriggerFor(windowLevel, audioCell.g);
         }
-        // Drum windows: snares flash cold white (alternating sides), hats
-        // twinkle pale cyan. Role is in blue: ~0.5 snare, 1 hat.
+        // Palette colour for this window, by its band.
+        float windowGlow = dot(totalEmissiveRadiance, vec3(0.299, 0.587, 0.114));
+        totalEmissiveRadiance = mix(totalEmissiveRadiance, paletteAt(audioCell.r) * windowGlow, uPaletteTint * uAudioActive);
+        // Drum windows: snares flash a near-white palette accent (alternating
+        // sides), hats twinkle another. Role is in blue: ~0.5 snare, 1 hat.
         if (audioCell.b > 0.3) {
           totalEmissiveRadiance += audioCell.b > 0.75
-            ? ${glsl(HAT_FLASH)} * audioHat()
-            : ${glsl(SNARE_FLASH)} * audioSnare();
+            ? paletteAt(0.75) * 1.3 * audioHat()
+            : (paletteAt(0.5) + vec3(1.2)) * audioSnare();
         }
-        // Heavy bass push: every window towards one colour, same brightness.
-        float windowGlow = dot(totalEmissiveRadiance, vec3(${LUMA.x}, ${LUMA.y}, ${LUMA.z}));
-        totalEmissiveRadiance = mix(totalEmissiveRadiance, ${glsl(unifyTint)} * windowGlow, audioUnify());`,
+        // The heaviest bass pushes: storm red, same brightness.
+        float glow = dot(totalEmissiveRadiance, vec3(0.299, 0.587, 0.114));
+        totalEmissiveRadiance = mix(totalEmissiveRadiance, ${glsl(storm)} * glow, audioUnify());`,
       uniforms: { uBandMap: { value: bandMap }, uTriggerMap: { value: triggerMap } },
       declarations: 'uniform sampler2D uBandMap;\nuniform sampler2D uTriggerMap;',
     })

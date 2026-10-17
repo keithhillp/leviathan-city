@@ -1,8 +1,8 @@
 import * as THREE from 'three'
 import { PATTERN_TYPES } from './audioField.js'
-import { mulberry32 } from './random.js'
+import { hashString, mulberry32 } from './random.js'
 
-const { sweep, ripple, outward, scatter } = PATTERN_TYPES
+const { sweep, ripple, outward, scatter, spiral, rings, stripes, implode, blocks } = PATTERN_TYPES
 
 const SET_SIZE = [3, 4] // patterns per song
 const PHRASE_KICKS = 16 // consider switching every this many kicks...
@@ -22,9 +22,14 @@ function rippleOrigin(rng, { heroCenter, signCenter, wallX }) {
 }
 
 // Pattern library: [name, type, origin (or a function of rng), axis, speed].
-// Speed is units per second (for scatter: spread in seconds).
+// Speed is units per second for sweep/ripple/outward/implode, and the spread
+// in seconds for the repeating and random shapes. Axis meaning per type:
+// sweep/outward: direction; spiral: [arms, twist per unit, -]; rings:
+// [1 / wavelength, -, -]; stripes: direction / wavelength; implode: [radius].
+const diagonal = new THREE.Vector3(1, 0, 1).normalize()
 function library(places) {
   const { heroCenter } = places
+  const plaza = new THREE.Vector3(0, 20, -10)
   return [
     ['tower sweep', sweep, heroCenter, [0, 0, 1], 90],
     ['reverse sweep', sweep, new THREE.Vector3(0, 0, 70), [0, 0, -1], 90],
@@ -35,13 +40,15 @@ function library(places) {
     ['centre out', outward, new THREE.Vector3(0, 0, 0), [1, 0, 0], 25],
     ['ripple', ripple, (rng) => rippleOrigin(rng, places), [0, 0, 0], 90],
     ['scatter', scatter, new THREE.Vector3(), [0, 0, 0], 0.9],
+    ['diagonal', sweep, new THREE.Vector3(-40, 0, -80), diagonal.toArray(), 70],
+    ['diagonal back', sweep, new THREE.Vector3(40, 0, 60), diagonal.clone().negate().toArray(), 70],
+    ['spiral', spiral, plaza, [2, 0.02, 0], 1.2],
+    ['rings', rings, heroCenter, [1 / 30, 0, 0], 1.2],
+    ['floor stripes', stripes, new THREE.Vector3(), [0, 1 / 14, 0], 1],
+    ['street stripes', stripes, new THREE.Vector3(), [0, 0, 1 / 18], 1],
+    ['implode', implode, plaza, [140, 0, 0], 90],
+    ['blocks', blocks, new THREE.Vector3(), [0, 0, 0], 1],
   ].map(([name, type, origin, axis, speed]) => ({ name, type, origin, axis, speed }))
-}
-
-function hashString(text) {
-  let hash = 2166136261
-  for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619)
-  return hash >>> 0
 }
 
 // Picks which shape the light pulses take. Each song (by title) gets its own
@@ -57,6 +64,8 @@ export function createPatterns({ audioField, places }) {
   let fading = false
   let lastSwitchBeat = 0
   let lowEnergySeen = false
+  // Counts pattern changes, and whether the last was a drop, for the palette.
+  const switches = { count: 0, drop: false }
 
   function write(pattern, rng, origin, axis) {
     const point = typeof pattern.origin === 'function' ? pattern.origin(rng) : pattern.origin
@@ -84,15 +93,18 @@ export function createPatterns({ audioField, places }) {
     switchTo(songSet[0], rng, true)
   }
 
-  function switchRandomly() {
+  function switchRandomly(drop) {
     const options = songSet.filter((p) => p !== current)
     switchTo(options[Math.floor(Math.random() * options.length)], Math.random, false)
+    switches.count++
+    switches.drop = drop
   }
 
   return {
     get current() {
       return current?.name
     },
+    switches,
     update(delta, analysis, songTitle) {
       if (songTitle !== title) {
         title = songTitle
@@ -116,7 +128,7 @@ export function createPatterns({ audioField, places }) {
       const dropLanded = lowEnergySeen && analysis.energy > DROP_TO
       const phraseEnded = analysis.beatCount - lastSwitchBeat >= PHRASE_KICKS
       if (dropLanded || (phraseEnded && Math.random() < PHRASE_SWITCH_CHANCE)) {
-        switchRandomly()
+        switchRandomly(dropLanded)
         lowEnergySeen = false
         lastSwitchBeat = analysis.beatCount
       } else if (phraseEnded) {

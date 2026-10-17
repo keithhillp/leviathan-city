@@ -65,9 +65,15 @@ const ENERGY_RISE = 4 // per second: the drop lands fast...
 const ENERGY_FALL = 0.7 // ...and the energy drains away slowly
 const QUIET_LIGHTS = 0.4 // light response at zero energy (1 at full)
 const QUIET_DRUMS = 0.35 // drum flash strength at zero energy
-// Heavy bass pushes pull every window towards one colour: bass level range
-// over which that happens (scaled by energy, so build-ups don't do it).
-const UNIFY_BASS = [0.4, 0.9]
+// The heaviest bass pushes turn every window storm red: bass level range over
+// which that happens (scaled by energy, so build-ups don't do it).
+const UNIFY_BASS = [0.65, 1]
+
+// Tonal brightness: the spectral centroid of the bands, rescaled to the range
+// this track has covered lately, so every track spans dark..bright.
+const BRIGHTNESS_SMOOTHING = 3 // per second
+const BRIGHTNESS_RANGE_DECAY = 0.05 // per second, how fast the range relaxes
+const BRIGHTNESS_MIN_RANGE = 0.08
 
 // Drum detection by spectral flux (new energy since the last frame) over each
 // drum's frequency ranges ([fromHz, toHz, weight]); a hit is flux well above
@@ -151,6 +157,10 @@ export class AudioAnalysis {
     this.calm = 0 // 0..1, how quiet this passage is relative to the track
     this.energy = 0 // 0..1, build-up / breakdown vs drop
     this.unify = 0 // 0..1, how far windows go to one colour on a heavy bass push
+    this.brightness = 0.5 // 0..1, dark (bass-heavy) .. bright (hats, air)
+    this.centroid = 0.5
+    this.centroidLow = 0.5
+    this.centroidHigh = 0.5
     this.subLevel = 0
     this.surge = false // true on a kick with exceptionally deep, heavy sub-bass
     this.subPeak = 0.5
@@ -229,6 +239,7 @@ export class AudioAnalysis {
     this.updateStereo(delta, frame)
     this.levels.bass = this.bands[0]
     this.unify = THREE.MathUtils.smoothstep(this.levels.bass, ...UNIFY_BASS) * this.energy
+    this.updateBrightness(delta)
     this.levels.treble = bandLevel(frame.frequency, binHz, 3000, 12000)
     const voice = bandLevel(frame.frequency, binHz, ...VOICE_HZ) ** CURVE
     this.voicePeak = Math.max(voice, this.voicePeak - delta * VOICE_PEAK_DECAY, 0.1)
@@ -249,6 +260,22 @@ export class AudioAnalysis {
       this.surge = true
       this.sinceSurge = 0
     }
+  }
+
+  updateBrightness(delta) {
+    let weighted = 0
+    let total = 0
+    for (let i = 1; i < BANDS; i++) {
+      weighted += i * this.rawBands[i]
+      total += this.rawBands[i]
+    }
+    if (total < 0.01) return
+    const centroid = weighted / total / (BANDS - 1)
+    this.centroid += (centroid - this.centroid) * Math.min(1, delta * BRIGHTNESS_SMOOTHING)
+    this.centroidLow = Math.min(this.centroid, this.centroidLow + delta * BRIGHTNESS_RANGE_DECAY)
+    this.centroidHigh = Math.max(this.centroid, this.centroidHigh - delta * BRIGHTNESS_RANGE_DECAY)
+    const range = Math.max(BRIGHTNESS_MIN_RANGE, this.centroidHigh - this.centroidLow)
+    this.brightness = THREE.MathUtils.clamp((this.centroid - this.centroidLow) / range, 0, 1)
   }
 
   detectDrums(delta, frame, binHz) {
