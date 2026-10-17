@@ -1,7 +1,25 @@
 <script setup>
-defineProps({
+import { ref } from 'vue'
+import { fetchYouTubeTrack } from '../youtube.js'
+
+const props = defineProps({
   player: { type: Object, required: true },
 })
+
+const link = ref('')
+const status = ref('') // fetching message or error
+
+async function addYouTube() {
+  if (!link.value.trim() || status.value === 'Fetching audio…') return
+  status.value = 'Fetching audio…'
+  try {
+    props.player.addTrack(await fetchYouTubeTrack(link.value))
+    link.value = ''
+    status.value = ''
+  } catch (error) {
+    status.value = error.message
+  }
+}
 </script>
 
 <template>
@@ -22,6 +40,11 @@ defineProps({
       </button>
       <button title="Next" @click="player.next()">⏭</button>
     </div>
+    <form class="youtube" @submit.prevent="addYouTube">
+      <input v-model="link" type="url" placeholder="Paste YouTube link" aria-label="YouTube link" />
+      <button type="submit" title="Add and play">+</button>
+    </form>
+    <div v-if="status" class="status">{{ status }}</div>
   </div>
 </template>
 
@@ -54,9 +77,31 @@ defineProps({
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.buttons {
+.buttons,
+.youtube {
   display: flex;
   gap: 6px;
+}
+.youtube {
+  margin-top: 8px;
+}
+input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 176, 0, 0.5);
+  color: #ffd27a;
+  font: 8px/1 var(--ui-font);
+  padding: 6px 8px;
+}
+input::placeholder {
+  color: rgba(255, 176, 0, 0.5);
+}
+.status {
+  margin-top: 6px;
+  font-size: 8px;
+  color: #ffd27a;
+  max-width: 320px;
 }
 button {
   min-width: 40px;

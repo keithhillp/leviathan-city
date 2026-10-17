@@ -99,6 +99,12 @@ export function useAudioPlayer(loadTracks) {
     load(index.value + 1, playing.value)
   }
 
+  // Adds a track (e.g. from a YouTube link) to the end and plays it.
+  function addTrack(track) {
+    tracks.value.push(track)
+    load(tracks.value.length - 1, true)
+  }
+
   function sample() {
     if (analyser) {
       analyser.getByteFrequencyData(frame.frequency)
@@ -134,5 +140,5 @@ export function useAudioPlayer(loadTracks) {
     context?.close()
   })
 
-  return { tracks, loaded, index, current, playing, togglePlay, previous, next, sample }
+  return { tracks, loaded, index, current, playing, togglePlay, previous, next, addTrack, sample }
 }
