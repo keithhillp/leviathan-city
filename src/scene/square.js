@@ -72,6 +72,10 @@ export const BRIDGE = {
 }
 const BRIDGE_MARKER = new THREE.Color(1.6, 0.04, 0.03)
 BRIDGE.deckY = BRIDGE.underside + BRIDGE.thickness
+
+// Where the eyebots patrol: in front of the side buildings' facades (at
+// ±wallX), above the bridge, train and portal arches.
+export const PATROL = { wallX: PLAZA_HALF_WIDTH, z: [-64, 40], y: [17, 45] }
 export const ROAD = {
   minZ: TOWER_FACE_Z - 8, // inside the tunnel
   maxZ: 70, // behind the camera

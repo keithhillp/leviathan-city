@@ -7,11 +7,12 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { createCity } from '../scene/city.js'
-import { BRIDGE, CAMERAS, ROAD, createSquare } from '../scene/square.js'
+import { BRIDGE, CAMERAS, PATROL, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
 import { createTrain } from '../scene/train.js'
 import { createSky } from '../scene/sky.js'
 import { createWetness } from '../scene/wetness.js'
+import { createEyebots } from '../scene/eyebots.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -44,7 +45,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train, sky, wetness
+let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -132,6 +133,9 @@ onMounted(() => {
   sky = createSky(scene)
   scene.add(sky.group)
 
+  eyebots = createEyebots({ patrol: PATROL })
+  scene.add(eyebots.group)
+
   wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
 
   // After everything is in the scene, so every material gets vertex snapping.
@@ -179,6 +183,7 @@ onMounted(() => {
     traffic.update(delta, camera.position)
     train.update(delta)
     sky.update(delta, analysis)
+    eyebots.update(delta, elapsed)
     rain.update(delta, camera.position)
 
     if (freeCam.value) {
