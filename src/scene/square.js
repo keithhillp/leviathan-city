@@ -427,37 +427,35 @@ export function createSquare() {
       }
     }
   }
-  group.add(
-    new THREE.Mesh(
-      mergeGeometries(markings),
-      new THREE.MeshStandardMaterial({
-        color: 0x8c8c86,
-        roughness: 0.55,
-        // Keeps the paint from flickering against the road surface below.
-        polygonOffset: true,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -4,
-      }),
-    ),
+  const paint = new THREE.Mesh(
+    mergeGeometries(markings),
+    new THREE.MeshStandardMaterial({
+      color: 0x8c8c86,
+      roughness: 0.55,
+      // Keeps the paint from flickering against the road surface below.
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
+    }),
   )
+  group.add(paint)
 
   // Pavements between the outside lanes and the buildings.
   const pavementWidth = PLAZA_HALF_WIDTH - ROAD_OUTER
   const pavementLength = FRONT_Z - TOWER_FACE_Z
-  group.add(
-    new THREE.Mesh(
-      mergeGeometries(
-        [-1, 1].map((side) =>
-          new THREE.BoxGeometry(pavementWidth, PAVEMENT_HEIGHT, pavementLength).translate(
-            side * (ROAD_OUTER + pavementWidth / 2),
-            PAVEMENT_HEIGHT / 2,
-            (FRONT_Z + TOWER_FACE_Z) / 2,
-          ),
+  const pavements = new THREE.Mesh(
+    mergeGeometries(
+      [-1, 1].map((side) =>
+        new THREE.BoxGeometry(pavementWidth, PAVEMENT_HEIGHT, pavementLength).translate(
+          side * (ROAD_OUTER + pavementWidth / 2),
+          PAVEMENT_HEIGHT / 2,
+          (FRONT_Z + TOWER_FACE_Z) / 2,
         ),
       ),
-      new THREE.MeshStandardMaterial({ color: 0x1f211f, roughness: 0.7, metalness: 0.1 }),
     ),
+    new THREE.MeshStandardMaterial({ color: 0x1f211f, roughness: 0.7, metalness: 0.1 }),
   )
+  group.add(pavements)
 
   const bollardZs = []
   for (let z = TOWER_FACE_Z + 4; z < ROAD.maxZ; z += MEDIAN.bollardSpacing) {
@@ -484,6 +482,13 @@ export function createSquare() {
   return {
     group,
     heroCenter,
+    // Rain-soaked surfaces near road level, for the wet reflections.
+    wetSurfaces: [
+      { mesh: median, roughness: 0.3 },
+      { mesh: kerbs, roughness: 0.35 },
+      { mesh: paint, roughness: 0.3 },
+      { mesh: pavements, roughness: 0.3 },
+    ],
     update(analysis, delta, elapsed) {
       // Quiet passages: hits sometimes glitch a few screens for a 16th or 8th note.
       if (analysis.hit && Math.random() < GLITCH.chance * analysis.calm) {

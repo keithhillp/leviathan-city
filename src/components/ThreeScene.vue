@@ -11,6 +11,7 @@ import { BRIDGE, CAMERAS, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
 import { createTrain } from '../scene/train.js'
 import { createSky } from '../scene/sky.js'
+import { createWetness } from '../scene/wetness.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -43,7 +44,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train, sky
+let analysis, ps1Pass, ps1Style, train, sky, wetness
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -131,6 +132,8 @@ onMounted(() => {
   sky = createSky(scene)
   scene.add(sky.group)
 
+  wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
+
   // After everything is in the scene, so every material gets vertex snapping.
   ps1Style = applyPS1(scene)
   ps1Style.setEnabled(ps1.value)
@@ -193,6 +196,7 @@ onMounted(() => {
       )
       camera.lookAt(target)
     }
+    wetness.update(camera)
     composer.render()
   })
 })
@@ -203,6 +207,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   controls.dispose()
   audioField.texture.dispose()
+  wetness.dispose()
   scene.traverse((obj) => {
     obj.geometry?.dispose()
     for (const material of [obj.material].flat().filter(Boolean)) {

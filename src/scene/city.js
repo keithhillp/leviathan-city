@@ -253,7 +253,7 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
   })
   group.add(new THREE.Mesh(mergeGeometries(bulbGeometries), bulbMaterial))
 
-  // Matte asphalt
+  // Asphalt; made wet (puddles and reflections) by createWetness
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(EXTENT * 4, EXTENT * 4),
     new THREE.MeshStandardMaterial({ color: 0x1a1d1f, roughness: 0.95, metalness: 0 }),
@@ -266,6 +266,7 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
 
   return {
     group,
+    wetSurfaces: [{ mesh: ground, puddles: true }],
     update(elapsed) {
       citadel.update(elapsed)
       signMesh.update(elapsed)
