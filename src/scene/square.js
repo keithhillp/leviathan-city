@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Screen } from './screens.js'
 import { Visualiser } from './visualiser.js'
 import { AdsContent, DeadContent, TickerContent } from './screenContent.js'
+import billboards from '../content/billboards.json'
 
 // A Times Square style plaza along the avenue at x = 0: the camera stands at
 // the open end looking at a tower carrying the big visualiser screen, with
@@ -15,6 +16,11 @@ const SCREEN_GAP = 0.25 // distance in front of the facade
 // CCTV cameras the viewer can switch between; the first is the default.
 // Find new ones with the free camera (F) and paste its coordinates here.
 export const CAMERAS = [
+  {
+    name: 'LEVIATHAN APPROACH',
+    position: new THREE.Vector3(15.14, 5.96, 56.07),
+    target: new THREE.Vector3(-12.58, 36.74, -47.86),
+  },
   {
     name: 'PLAZA OVERWATCH',
     position: new THREE.Vector3(-13.95, 26.0, 17.89),
@@ -134,6 +140,45 @@ const SPILL_LIGHTS = [
 ]
 const SPILL_INTENSITY = 120
 
+// White neon company name standing on the tower's roof, facing the plaza.
+// `lift` is the gap between the roof and the letters, `setback` how far
+// behind the front edge it stands.
+const CORPORATE_SIGN = { width: 54, lift: 1.5, setback: 1, brightness: 2.6, light: 400 }
+const FLOOR_HEIGHT = 3.5 // matches the city's floors
+
+// Glowing white letters on a transparent background, so the tower's windows
+// show between them. Tube-like: a soft halo with a hot white core.
+function createCorporateSign(text) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 2048
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.letterSpacing = '28px'
+  let size = 170
+  ctx.font = `800 ${size}px "Noto Sans", sans-serif`
+  const fit = (canvas.width - 120) / ctx.measureText(text).width
+  if (fit < 1) ctx.font = `800 ${(size *= fit)}px "Noto Sans", sans-serif`
+
+  const x = canvas.width / 2
+  const y = canvas.height / 2 + 6
+  ctx.shadowColor = 'rgba(225, 240, 255, 0.9)'
+  ctx.shadowBlur = 36
+  ctx.fillStyle = 'rgba(225, 240, 255, 0.55)'
+  ctx.fillText(text, x, y)
+  ctx.shadowBlur = 10
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(text, x, y)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false })
+  material.color.setScalar(CORPORATE_SIGN.brightness) // HDR so the letters bloom
+  const height = (CORPORATE_SIGN.width * canvas.height) / canvas.width
+  return new THREE.Mesh(new THREE.PlaneGeometry(CORPORATE_SIGN.width, height), material)
+}
+
 const HERO_GLOW_BASE = 1500
 const HERO_GLOW_BASS = 7000
 const WARM = new THREE.Color(1, 0.55, 0.15)
@@ -175,6 +220,31 @@ export function createSquare() {
   )
   heroFrame.position.copy(heroCenter).z -= 0.2
   group.add(heroFrame)
+
+  const tower = SQUARE.buildings.find((building) => building.name === 'tower')
+  const roof = tower.floors * FLOOR_HEIGHT
+  const sign = createCorporateSign(billboards.corporateSign)
+  const signHeight = sign.geometry.parameters.height
+  const signZ = TOWER_FACE_Z - CORPORATE_SIGN.setback
+  const signY = roof + CORPORATE_SIGN.lift + signHeight / 2
+  sign.position.set(0, signY, signZ)
+  // Steel rack behind the letters, standing on the roof.
+  const rackHeight = CORPORATE_SIGN.lift + signHeight
+  const rack = new THREE.Mesh(
+    mergeGeometries([
+      new THREE.BoxGeometry(CORPORATE_SIGN.width + 1, 0.4, 0.4).translate(0, roof + CORPORATE_SIGN.lift, 0),
+      new THREE.BoxGeometry(CORPORATE_SIGN.width + 1, 0.4, 0.4).translate(0, roof + rackHeight, 0),
+      ...[-0.5, -0.25, 0, 0.25, 0.5].map((f) =>
+        new THREE.BoxGeometry(0.4, rackHeight, 0.4).translate(f * CORPORATE_SIGN.width, roof + rackHeight / 2, 0),
+      ),
+    ]),
+    frameMaterial,
+  )
+  rack.position.z = signZ - 0.5
+  // Cool white wash over the roof edge and the top of the facade.
+  const signLight = new THREE.PointLight(0xdfeeff, CORPORATE_SIGN.light, 45, 2)
+  signLight.position.set(0, signY, TOWER_FACE_Z + 6)
+  group.add(sign, rack, signLight)
 
   // Tunnel mouth: a black opening in the tower's base with a concrete lintel.
   const tunnel = new THREE.Mesh(
