@@ -12,15 +12,30 @@ const FRONT_Z = 45
 const TOWER_FACE_Z = -72
 const SCREEN_GAP = 0.25 // distance in front of the facade
 
-export const CAMERA = {
-  position: new THREE.Vector3(0, 1.8, 18),
-  target: new THREE.Vector3(0, 24, -72),
-}
+// CCTV cameras the viewer can switch between; the first is the default.
+// Find new ones with the free camera (F) and paste its coordinates here.
+export const CAMERAS = [
+  {
+    name: 'PLAZA OVERWATCH',
+    position: new THREE.Vector3(-13.95, 26.0, 17.89),
+    target: new THREE.Vector3(-1.56, 11.49, -63.91),
+  },
+  {
+    name: 'STREET LEVEL',
+    position: new THREE.Vector3(16.53, 0.59, 53.76),
+    target: new THREE.Vector3(4.09, 7.38, -57.21),
+  },
+  {
+    name: 'ROOFTOP',
+    position: new THREE.Vector3(2.26, 48.82, 101.03),
+    target: new THREE.Vector3(6.0, 22.51, -54.6),
+  },
+]
 
 // Traffic runs down the plaza between a tunnel in the tower's base and the
 // street behind the camera. Oncoming lanes are on the left (drive on the right).
 // Raised strip between the two directions; the camera stands on it.
-const MEDIAN = { halfWidth: 2.5, height: 0.25, bollardSpacing: 10, bollardClearance: 8 }
+const MEDIAN = { halfWidth: 2.5, height: 0.25, bollardSpacing: 10 }
 const REFLECTOR = new THREE.Color(3, 1.4, 0.2)
 
 // Lanes per side, from the reservation outwards (inside lanes are fastest).
@@ -60,8 +75,9 @@ export const SQUARE = {
   ],
 }
 
-// 16:9, as wide as the plaza allows (the side buildings would hide anything wider)
-const HERO = { x: 0, bottom: 12, width: 38, height: 21.375 }
+// As wide as the plaza allows (the side buildings would hide anything wider)
+// and tall enough for a big, readable track title above the bars.
+const HERO = { x: 0, bottom: 12, width: 38, height: 30 }
 
 const content = {
   ads: () => (ctx, w, h) => new AdsContent(ctx, w, h),
@@ -147,7 +163,7 @@ export function createSquare() {
     brightness: 1.3,
     heavyGrime: false,
     pulse: true,
-    createContent: (ctx) => new Visualiser(ctx),
+    createContent: () => new Visualiser(),
   })
   hero.material.fog = false // the focal point cuts through the haze
   const heroCenter = new THREE.Vector3(HERO.x, HERO.bottom + HERO.height / 2, TOWER_FACE_Z + SCREEN_GAP)
@@ -183,9 +199,7 @@ export function createSquare() {
     return { light, screen: screens[screenIndex] }
   })
 
-
-  // Central reservation with kerbs and a row of reflective bollards that
-  // stops short of the camera.
+  // Central reservation with kerbs and a row of reflective bollards.
   const medianLength = ROAD.maxZ - TOWER_FACE_Z
   const medianZ = (ROAD.maxZ + TOWER_FACE_Z) / 2
   const median = new THREE.Mesh(
@@ -257,7 +271,7 @@ export function createSquare() {
   )
 
   const bollardZs = []
-  for (let z = TOWER_FACE_Z + 4; z < CAMERA.position.z - MEDIAN.bollardClearance; z += MEDIAN.bollardSpacing) {
+  for (let z = TOWER_FACE_Z + 4; z < ROAD.maxZ; z += MEDIAN.bollardSpacing) {
     bollardZs.push(z)
   }
   const bollards = new THREE.InstancedMesh(

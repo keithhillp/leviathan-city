@@ -7,12 +7,13 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { createCity } from '../scene/city.js'
-import { CAMERA, ROAD, createSquare } from '../scene/square.js'
+import { CAMERAS, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
 import { applyPS1, createPS1Pass } from '../scene/ps1.js'
+import CctvOverlay from './CctvOverlay.vue'
 
 const props = defineProps({
   player: { type: Object, required: true },
@@ -25,6 +26,10 @@ const FOV = 50
 const PORTRAIT_FOV = 85
 const SWAY = 0.25 // a slow handheld drift so the fixed view doesn't feel frozen
 const COORDS_INTERVAL = 0.1 // seconds between coordinate readout updates
+
+// Which CCTV camera is live: C cycles, 1-9 jump straight to one.
+const cameraIndex = ref(0)
+const activeCamera = () => CAMERAS[cameraIndex.value]
 
 // Free camera for finding new viewpoints: toggle with F, or start with ?freecam.
 const freeCam = ref(new URLSearchParams(window.location.search).has('freecam'))
@@ -46,6 +51,9 @@ function onKeyDown(event) {
   const key = event.key.toLowerCase()
   if (key === 'f') freeCam.value = !freeCam.value
   if (key === 'p') ps1.value = !ps1.value
+  if (key === 'c') cameraIndex.value = (cameraIndex.value + 1) % CAMERAS.length
+  const number = Number(key)
+  if (number >= 1 && number <= CAMERAS.length) cameraIndex.value = number - 1
 }
 
 async function copyCoords() {
@@ -63,7 +71,12 @@ watch(freeCam, (on) => {
   if (!controls) return
   controls.enabled = on
   // Start orbiting from wherever the fixed view is looking.
-  if (on) controls.target.copy(CAMERA.target)
+  if (on) controls.target.copy(activeCamera().target)
+})
+
+// Cutting to a camera leaves the free camera.
+watch(cameraIndex, () => {
+  freeCam.value = false
 })
 
 onMounted(() => {
@@ -81,8 +94,8 @@ onMounted(() => {
   scene.fog = new THREE.FogExp2(HAZE, 0.006)
 
   camera = new THREE.PerspectiveCamera(FOV, el.clientWidth / el.clientHeight, 0.1, 2000)
-  camera.position.copy(CAMERA.position)
-  camera.lookAt(CAMERA.target)
+  camera.position.copy(activeCamera().position)
+  camera.lookAt(activeCamera().target)
 
   // Overcast sky fill plus a cold, weak key light from above.
   scene.add(new THREE.HemisphereLight(0x8a9aa4, 0x1a1c1c, 0.5))
@@ -110,7 +123,7 @@ onMounted(() => {
   ps1Style.setEnabled(ps1.value)
 
   controls = new OrbitControls(camera, renderer.domElement)
-  controls.target.copy(CAMERA.target)
+  controls.target.copy(activeCamera().target)
   controls.enableDamping = true
   controls.enabled = freeCam.value
   window.addEventListener('keydown', onKeyDown)
@@ -157,12 +170,13 @@ onMounted(() => {
         coords.value = `position: ${fmt(camera.position)}\ntarget:   ${fmt(controls.target)}`
       }
     } else {
+      const { position, target } = activeCamera()
       camera.position.set(
-        CAMERA.position.x + Math.sin(elapsed * 0.13) * SWAY,
-        CAMERA.position.y + Math.sin(elapsed * 0.21) * SWAY * 0.3,
-        CAMERA.position.z,
+        position.x + Math.sin(elapsed * 0.13) * SWAY,
+        position.y + Math.sin(elapsed * 0.21) * SWAY * 0.3,
+        position.z,
       )
-      camera.lookAt(CAMERA.target)
+      camera.lookAt(target)
     }
     composer.render()
   })
@@ -191,6 +205,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="container" class="scene"></div>
+  <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" />
   <div v-if="freeCam" class="coords">
     <div class="label">FREE CAM · F to exit · drag rotate · right-drag pan · scroll zoom</div>
     <pre>{{ coords }}</pre>

@@ -9,6 +9,7 @@ export function useAudioPlayer(loadTracks) {
   audio.preload = 'auto'
 
   const tracks = ref([])
+  const loaded = ref(false)
   const index = ref(0)
   const playing = ref(false)
   const current = computed(() => tracks.value[index.value] ?? null)
@@ -97,6 +98,7 @@ export function useAudioPlayer(loadTracks) {
 
   loadTracks().then((list) => {
     tracks.value = list
+    loaded.value = true
     load(0, false)
   })
 
@@ -108,5 +110,5 @@ export function useAudioPlayer(loadTracks) {
     context?.close()
   })
 
-  return { tracks, index, current, playing, togglePlay, previous, next, sample }
+  return { tracks, loaded, index, current, playing, togglePlay, previous, next, sample }
 }

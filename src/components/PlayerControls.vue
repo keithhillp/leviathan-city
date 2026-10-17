@@ -6,8 +6,15 @@ defineProps({
 
 <template>
   <div class="panel">
-    <div class="title">NOW PLAYING</div>
-    <div class="now">{{ player.current.value?.title ?? 'Loading…' }}</div>
+    <div class="title">
+      NOW PLAYING
+      <span v-if="player.tracks.value.length > 1" class="count">
+        {{ player.index.value + 1 }} / {{ player.tracks.value.length }}
+      </span>
+    </div>
+    <div class="now">
+      {{ player.current.value?.title ?? (player.loaded.value ? 'No tracks' : 'Loading…') }}
+    </div>
     <div class="buttons">
       <button title="Previous" @click="player.previous()">⏮</button>
       <button :title="player.playing.value ? 'Pause' : 'Play'" @click="player.togglePlay()">
@@ -35,6 +42,10 @@ defineProps({
   font-size: 11px;
   letter-spacing: 0.2em;
   opacity: 0.7;
+}
+.count {
+  float: right;
+  margin-left: 16px;
 }
 .now {
   margin: 4px 0 10px;

@@ -1,6 +1,7 @@
 import { BANDS } from './audioField.js'
 
-export const BARS = 56
+// Few, wide bars so they stay readable at the PS1 view's low resolution.
+export const BARS = 16
 const MIN_HZ = 30
 const MAX_HZ = 16000
 const TREBLE_TILT = 0.35 // lift the top bars a little so they move too
