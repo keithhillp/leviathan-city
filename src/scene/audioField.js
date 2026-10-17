@@ -17,13 +17,19 @@ const STEREO_AMOUNT = 0.6 // how far the louder side brightens and the other dim
 const STEP = 1 / 60
 const MIN_GAIN = 0.3 // between hits lights dim to this...
 const GAIN_RANGE = 1.7 // ...and peaks add up to this much on top
+export const HISTORY_SECONDS = HISTORY * STEP
+
+// Shapes the delay can take (see patterns.js): `sweep` along an axis, `ripple`
+// out from a point, `outward` from a plane both ways, `scatter` per window.
+export const PATTERN_TYPES = { sweep: 0, ripple: 1, outward: 2, scatter: 3 }
 
 // Keeps the last ~2s of band levels in a texture so lights can look up the
-// level "as it was" when the sound reached them. Pulses sweep from `origin`
-// along `direction` (from the tower down the street towards the cameras), so
-// everything at the same distance along it lights together.
+// level "as it was" when the sound reached them. How long the sound takes to
+// reach a point is set by a pattern (crossfading between two, A and B), so
+// pulses travel across the city in different shapes. `origin` is the street's
+// centre line, used to tell its left side from its right.
 export class AudioField {
-  constructor({ speed = 90, direction = new THREE.Vector3(0, 0, 1) } = {}) {
+  constructor() {
     this.data = new Uint8Array(COLUMNS * HISTORY)
     this.texture = new THREE.DataTexture(this.data, COLUMNS, HISTORY, THREE.RedFormat)
     this.texture.magFilter = this.texture.minFilter = THREE.LinearFilter
@@ -33,9 +39,14 @@ export class AudioField {
     this.uniforms = {
       uAudioHistory: { value: this.texture },
       uAudioOrigin: { value: new THREE.Vector3() },
-      uAudioDirection: { value: direction.clone().normalize() },
-      uAudioMaxDistance: { value: speed * HISTORY * STEP },
       uAudioActive: { value: 0 },
+      // Patterns: origin.xyz + type in w; axis.xyz + speed (units/s, or spread
+      // in seconds for scatter) in w. uPatternMix crossfades A -> B.
+      uPatternA: { value: new THREE.Vector4() },
+      uPatternAxisA: { value: new THREE.Vector4(0, 0, 1, 90) },
+      uPatternB: { value: new THREE.Vector4() },
+      uPatternAxisB: { value: new THREE.Vector4(0, 0, 1, 90) },
+      uPatternMix: { value: 0 },
     }
   }
 
@@ -89,14 +100,36 @@ export class AudioField {
 const GAIN_GLSL = /* glsl */ `
 uniform sampler2D uAudioHistory;
 uniform vec3 uAudioOrigin;
-uniform vec3 uAudioDirection;
-uniform float uAudioMaxDistance;
 uniform float uAudioActive;
+uniform vec4 uPatternA;
+uniform vec4 uPatternAxisA;
+uniform vec4 uPatternB;
+uniform vec4 uPatternAxisB;
+uniform float uPatternMix;
 varying vec3 vAudioWorld;
 
+// Roughly one value per window (3 wide, 3.5 tall).
+float patternHash(vec3 p) {
+  vec3 cell = floor(p / vec3(3.0, 3.5, 3.0));
+  return fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+}
+
+// 0..1 of the history: how long ago this point "hears" the music.
+float patternDelay(vec4 pattern, vec4 axis) {
+  vec3 offset = vAudioWorld - pattern.xyz;
+  if (pattern.w > 2.5) return patternHash(vAudioWorld) * axis.w / ${HISTORY_SECONDS.toFixed(4)};
+  float distance = pattern.w < 0.5 ? dot(offset, axis.xyz)
+    : pattern.w < 1.5 ? length(offset)
+    : abs(dot(offset, axis.xyz));
+  return clamp(distance / (axis.w * ${HISTORY_SECONDS.toFixed(4)}), 0.0, 1.0);
+}
+
+float audioDelay() {
+  return mix(patternDelay(uPatternA, uPatternAxisA), patternDelay(uPatternB, uPatternAxisB), uPatternMix);
+}
+
 float audioColumn(float column) {
-  float along = dot(vAudioWorld - uAudioOrigin, uAudioDirection);
-  float delay = clamp(along / uAudioMaxDistance, 0.0, 1.0);
+  float delay = audioDelay();
   vec2 uv = vec2(
     (column + 0.5) / ${COLUMNS.toFixed(1)},
     delay * ${(HISTORY - 1) / HISTORY} + ${0.5 / HISTORY}

@@ -17,6 +17,7 @@ import { createFires } from '../scene/fires.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
+import { createPatterns } from '../scene/patterns.js'
 import { applyPS1, createPS1Pass } from '../scene/ps1.js'
 import CctvOverlay from './CctvOverlay.vue'
 
@@ -47,7 +48,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires
+let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires, patterns
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -125,7 +126,8 @@ onMounted(() => {
   scene.add(city.group)
 
   square = createSquare()
-  audioField.origin.copy(square.heroCenter) // pulses sweep from the tower towards the cameras
+  audioField.origin.copy(square.heroCenter) // the street's centre line, for left/right
+  patterns = createPatterns({ audioField, places: square.patternPlaces })
   scene.add(square.group)
 
   traffic = createTraffic(ROAD)
@@ -189,6 +191,7 @@ onMounted(() => {
     const frame = props.player.sample()
     analysis.update(delta, frame)
     square.update(analysis, delta, elapsed)
+    patterns.update(delta, analysis, frame.title)
     audioField.update(delta, analysis, frame.playing)
     city.update(elapsed)
     traffic.update(delta, camera.position)

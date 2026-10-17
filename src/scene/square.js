@@ -521,6 +521,8 @@ export function createSquare() {
   return {
     group,
     heroCenter,
+    // Landmarks the light patterns can start from.
+    patternPlaces: { heroCenter, signCenter: sign.position.clone(), wallX: PLAZA_HALF_WIDTH },
     // Rain-soaked surfaces near road level, for the wet reflections.
     wetSurfaces: [
       { mesh: median, roughness: 0.3 },
