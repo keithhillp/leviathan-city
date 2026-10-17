@@ -159,6 +159,13 @@ const SPILL_LIGHTS = [
 ]
 const SPILL_INTENSITY = 120
 
+// Screen glitches in quiet passages: chance per hit (scaled by how calm the
+// passage is) and the share of screens each glitch hits.
+const GLITCH = { chance: 0.5, share: 0.4 }
+// Power surges on the heaviest sub-bass: share of screens hit, how long (in
+// beats) and the spread of start delays (in beats) so failures cascade.
+const SURGE = { share: 0.75, beats: 0.75, spread: 0.25 }
+
 // White neon company name standing on the tower's roof, facing the plaza.
 // `lift` is the gap between the roof and the letters, `setback` how far
 // behind the front edge it stands.
@@ -478,6 +485,21 @@ export function createSquare() {
     group,
     heroCenter,
     update(analysis, delta, elapsed) {
+      // Quiet passages: hits sometimes glitch a few screens for a 16th or 8th note.
+      if (analysis.hit && Math.random() < GLITCH.chance * analysis.calm) {
+        const duration = analysis.beatInterval * (Math.random() < 0.5 ? 0.25 : 0.5)
+        for (const screen of [hero, ...screens]) {
+          if (Math.random() < GLITCH.share) screen.glitch(duration)
+        }
+      }
+      if (analysis.surge) {
+        const beat = analysis.beatInterval
+        for (const screen of [hero, ...screens]) {
+          if (Math.random() < SURGE.share) {
+            screen.glitch(beat * SURGE.beats, { surge: true, delay: Math.random() * beat * SURGE.spread })
+          }
+        }
+      }
       hero.update(delta, elapsed, analysis)
       for (const screen of screens) screen.update(delta, elapsed, analysis)
 

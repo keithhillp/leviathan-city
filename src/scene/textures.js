@@ -10,7 +10,7 @@ const LIT_COLORS = ['#ffb45a', '#ffc978', '#ffe0a8', '#d6eedc', '#b8d4dc']
 const TRIGGER_COLORS = [...LIT_COLORS, '#9fe8ff', '#c8ffd8']
 // Share of dark windows that switch on when their band gets loud enough;
 // the rest stay dark.
-const TRIGGER_CHANCE = 0.75
+const TRIGGER_CHANCE = 0.9
 const MIN_THRESHOLD = 0.3
 const MAX_THRESHOLD = 0.75
 

@@ -49,7 +49,7 @@ export function useAudioPlayer(loadTracks) {
     if (context) return
     context = new AudioContext()
     const source = context.createMediaElementSource(audio)
-    analyser = createAnalyser(2048)
+    analyser = createAnalyser(4096) // ~11 Hz bins, so the low bands are distinct
     source.connect(analyser)
     analyser.connect(context.destination)
 

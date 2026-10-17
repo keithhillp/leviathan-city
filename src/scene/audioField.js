@@ -1,12 +1,13 @@
 import * as THREE from 'three'
 
 // Band 0 is overall bass; 1..BANDS-1 are log-spaced frequency bands.
-export const BANDS = 32
+export const BANDS = 64
 const HISTORY = 128 // ~2s of history
 // History columns: the bands, then stereo balance and stereo weight (padded to
 // a multiple of 4 for texture row alignment).
 const BALANCE_COLUMN = BANDS
 const WEIGHT_COLUMN = BANDS + 1
+const CALM_COLUMN = BANDS + 2
 const COLUMNS = BANDS + 4
 const STEREO_AMOUNT = 0.6 // how far the louder side brightens and the other dims
 const STEP = 1 / 60
@@ -38,8 +39,8 @@ export class AudioField {
     return this.uniforms.uAudioOrigin.value
   }
 
-  // `stereo` is { balance, weight } from AudioAnalysis.
-  update(delta, bands, playing, stereo) {
+  // Takes AudioAnalysis's bands, stereo ({ balance, weight }) and calm.
+  update(delta, { bands, stereo, calm }, playing) {
     this.accumulator += delta
     while (this.accumulator >= STEP) {
       this.accumulator -= STEP
@@ -47,6 +48,7 @@ export class AudioField {
       for (let i = 0; i < BANDS; i++) this.data[i] = bands[i] * 255
       this.data[BALANCE_COLUMN] = ((stereo.balance + 1) / 2) * 255
       this.data[WEIGHT_COLUMN] = stereo.weight * 255
+      this.data[CALM_COLUMN] = calm * 255
       this.texture.needsUpdate = true
     }
     const active = this.uniforms.uAudioActive
@@ -96,6 +98,11 @@ float audioColumn(float column) {
 
 float audioLevel(float band) {
   return audioColumn(band * ${(BANDS - 1).toFixed(1)});
+}
+
+// 0..1, how quiet the passage was when the sound reached this point.
+float audioCalm() {
+  return audioColumn(${CALM_COLUMN.toFixed(1)});
 }
 
 // Brightens the side of the street the music is panned to (left of the

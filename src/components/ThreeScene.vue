@@ -10,6 +10,7 @@ import { createCity } from '../scene/city.js'
 import { BRIDGE, CAMERAS, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
 import { createTrain } from '../scene/train.js'
+import { createSky } from '../scene/sky.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -42,7 +43,7 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train
+let analysis, ps1Pass, ps1Style, train, sky
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -127,6 +128,9 @@ onMounted(() => {
   rain = createRain()
   scene.add(rain.object)
 
+  sky = createSky(scene)
+  scene.add(sky.group)
+
   // After everything is in the scene, so every material gets vertex snapping.
   ps1Style = applyPS1(scene)
   ps1Style.setEnabled(ps1.value)
@@ -167,10 +171,11 @@ onMounted(() => {
     const frame = props.player.sample()
     analysis.update(delta, frame)
     square.update(analysis, delta, elapsed)
-    audioField.update(delta, analysis.bands, frame.playing, analysis.stereo)
+    audioField.update(delta, analysis, frame.playing)
     city.update(elapsed)
     traffic.update(delta, camera.position)
     train.update(delta)
+    sky.update(delta, analysis)
     rain.update(delta, camera.position)
 
     if (freeCam.value) {

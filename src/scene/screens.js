@@ -4,6 +4,7 @@ const PX_PER_UNIT = 22
 const MAX_PX = 1024
 const LED_PITCH = 3 // px per LED cell in the overlay
 const FLICKER_CHANCE = 0.15 // per second, for screens with `flicker`
+const GLITCH_COLOURS = ['#ff00aa', '#00ffee', '#000000', '#ffffff']
 
 function makeCanvas(w, h) {
   const canvas = document.createElement('canvas')
@@ -88,6 +89,11 @@ export class Screen {
     this.flicker = flicker
     this.pulse = pulse
     this.flickerTime = 0
+    this.glitchTime = 0
+    this.glitchLength = 0
+    this.glitchDelay = 0
+    this.surging = false
+    this.wasGlitching = false
     this.material = new THREE.MeshBasicMaterial({ map: this.texture })
     this.material.color.setScalar(brightness)
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.material)
@@ -97,13 +103,58 @@ export class Screen {
     return this.content.glow
   }
 
+  // Corrupts the picture for `duration` seconds (re-randomised every frame),
+  // starting after `delay`. A `surge` is a power overload: a blown-out flash,
+  // then a flickering brownout, with the picture rolling vertically.
+  glitch(duration, { surge = false, delay = 0 } = {}) {
+    if (this.glitchTime > 0 && !surge) return
+    this.glitchTime = this.glitchLength = duration
+    this.glitchDelay = delay
+    this.surging = surge
+  }
+
+  // Torn horizontal slices, a colour-split ghost and corrupted blocks, drawn
+  // over the clean frame on the display canvas (the content buffer is untouched).
+  drawGlitch(width, height) {
+    const ctx = this.ctx
+    for (let i = 0, n = 3 + Math.floor(Math.random() * 5); i < n; i++) {
+      const y = Math.random() * height
+      const sliceH = height * (0.02 + Math.random() * 0.1)
+      const shift = (Math.random() - 0.5) * width * 0.5
+      ctx.drawImage(this.buffer, 0, y, width, sliceH, shift, y, width, sliceH)
+    }
+    ctx.save()
+    ctx.globalCompositeOperation = 'difference'
+    ctx.globalAlpha = 0.6
+    ctx.drawImage(this.buffer, (Math.random() - 0.5) * width * 0.04, 0)
+    ctx.restore()
+    for (let i = 0, n = Math.floor(Math.random() * 4); i < n; i++) {
+      ctx.fillStyle = GLITCH_COLOURS[Math.floor(Math.random() * GLITCH_COLOURS.length)]
+      ctx.fillRect(Math.random() * width, Math.random() * height, width * (0.05 + Math.random() * 0.25), height * 0.03)
+    }
+  }
+
   update(delta, elapsed, analysis) {
     const { width, height } = this.canvas
-    if (this.content.draw(this.bufferCtx, width, height, delta, elapsed, analysis)) {
-      this.ctx.drawImage(this.buffer, 0, 0)
+    if (this.glitchDelay > 0) this.glitchDelay -= delta
+    const glitching = this.glitchTime > 0 && this.glitchDelay <= 0
+    if (glitching) this.glitchTime -= delta
+    const changed = this.content.draw(this.bufferCtx, width, height, delta, elapsed, analysis)
+    // Static content still needs redrawing while glitching, and once after to restore it.
+    if (changed || glitching || this.wasGlitching) {
+      if (glitching && this.surging) {
+        // Picture rolls vertically as the power fails.
+        const roll = Math.random() * height
+        this.ctx.drawImage(this.buffer, 0, roll - height)
+        this.ctx.drawImage(this.buffer, 0, roll)
+      } else {
+        this.ctx.drawImage(this.buffer, 0, 0)
+      }
+      if (glitching) this.drawGlitch(width, height)
       this.ctx.drawImage(this.grime, 0, 0)
       this.texture.needsUpdate = true
     }
+    this.wasGlitching = glitching
 
     let level = this.brightness
     if (this.pulse) level *= 1 + analysis.levels.bass * 0.25
@@ -115,6 +166,13 @@ export class Screen {
         this.flickerTime -= delta
         level *= Math.random() < 0.5 ? 0.25 : 0.8
       }
+    }
+    if (glitching && this.surging) {
+      // Overload flash for the first part, then a flickering brownout.
+      const progress = 1 - this.glitchTime / this.glitchLength
+      level *= progress < 0.3 ? 2.5 + Math.random() : 0.1 + Math.random() * 0.35
+    } else if (glitching) {
+      level *= 0.6 + Math.random() * 0.8 // brightness stutter
     }
     this.material.color.setScalar(level)
   }
