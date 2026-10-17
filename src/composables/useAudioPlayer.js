@@ -16,11 +16,15 @@ export function useAudioPlayer(loadTracks) {
 
   let context = null
   let analyser = null
+  let leftAnalyser = null
+  let rightAnalyser = null
 
   // Reused every frame so the render loop doesn't allocate.
   const frame = {
     frequency: null,
     waveform: null,
+    left: null, // per-channel spectra, for stereo placement
+    right: null,
     sampleRate: 44100,
     title: '',
     started: false,
@@ -29,21 +33,39 @@ export function useAudioPlayer(loadTracks) {
     duration: 0,
   }
 
-  function ensureGraph() {
-    if (context) return
-    context = new AudioContext()
-    analyser = context.createAnalyser()
-    analyser.fftSize = 2048
+  function createAnalyser(fftSize) {
+    const node = context.createAnalyser()
+    node.fftSize = fftSize
     // Tuned for loud, heavily compressed masters like drum and bass: the
     // default -30 dB ceiling pins most bands at full, and 0.8 smoothing
     // smears 170+ BPM drums together.
-    analyser.minDecibels = -85
-    analyser.maxDecibels = -20
-    analyser.smoothingTimeConstant = 0.6
-    context.createMediaElementSource(audio).connect(analyser)
+    node.minDecibels = -85
+    node.maxDecibels = -20
+    node.smoothingTimeConstant = 0.6
+    return node
+  }
+
+  function ensureGraph() {
+    if (context) return
+    context = new AudioContext()
+    const source = context.createMediaElementSource(audio)
+    analyser = createAnalyser(2048)
+    source.connect(analyser)
     analyser.connect(context.destination)
+
+    // Left and right channels analysed separately (not played; the main
+    // path above is what you hear).
+    const splitter = context.createChannelSplitter(2)
+    source.connect(splitter)
+    leftAnalyser = createAnalyser(1024)
+    rightAnalyser = createAnalyser(1024)
+    splitter.connect(leftAnalyser, 0)
+    splitter.connect(rightAnalyser, 1)
+
     frame.frequency = new Uint8Array(analyser.frequencyBinCount)
     frame.waveform = new Uint8Array(analyser.fftSize)
+    frame.left = new Uint8Array(leftAnalyser.frequencyBinCount)
+    frame.right = new Uint8Array(rightAnalyser.frequencyBinCount)
     frame.sampleRate = context.sampleRate
     frame.started = true
   }
@@ -81,6 +103,8 @@ export function useAudioPlayer(loadTracks) {
     if (analyser) {
       analyser.getByteFrequencyData(frame.frequency)
       analyser.getByteTimeDomainData(frame.waveform)
+      leftAnalyser.getByteFrequencyData(frame.left)
+      rightAnalyser.getByteFrequencyData(frame.right)
     }
     frame.title = current.value?.title ?? ''
     frame.playing = !audio.paused

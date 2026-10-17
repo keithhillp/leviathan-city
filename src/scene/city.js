@@ -15,6 +15,8 @@ const WINDOW_W = 3
 const LAMP_SPACING = 22
 
 const SODIUM = new THREE.Color(1, 0.6, 0.25)
+// How much windows follow the kick rather than their own band (0..1).
+const WINDOW_SYNC = 0.65
 
 function solidColor(geometry, color) {
   const count = geometry.attributes.position.count
@@ -216,11 +218,15 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
       after: '#include <emissivemap_fragment>',
       apply: /* glsl */ `
         vec2 audioCell = texture2D(uBandMap, vEmissiveMapUv).rg;
-        totalEmissiveRadiance *= audioGain(audioCell.r);
-        // Dark windows that switch on when their band passes a threshold.
+        // Mostly the kick (band 0), so each beat sweeps down the street as one
+        // wave; the window's own band adds some variety.
+        float windowLevel = mix(audioLevel(audioCell.r), audioLevel(0.0), ${WINDOW_SYNC.toFixed(2)});
+        windowLevel *= audioStereoGain();
+        totalEmissiveRadiance *= audioGainFor(windowLevel);
+        // Dark windows that switch on when the level passes their threshold.
         if (audioCell.g > 0.0) {
           totalEmissiveRadiance += texture2D(uTriggerMap, vEmissiveMapUv).rgb
-            * emissive * audioTrigger(audioCell.r, audioCell.g);
+            * emissive * audioTriggerFor(windowLevel, audioCell.g);
         }`,
       uniforms: { uBandMap: { value: bandMap }, uTriggerMap: { value: triggerMap } },
       declarations: 'uniform sampler2D uBandMap;\nuniform sampler2D uTriggerMap;',

@@ -111,7 +111,7 @@ onMounted(() => {
   scene.add(city.group)
 
   square = createSquare()
-  audioField.origin.copy(square.heroCenter) // pulses spread from the hero screen
+  audioField.origin.copy(square.heroCenter) // pulses sweep from the tower towards the cameras
   scene.add(square.group)
 
   traffic = createTraffic(ROAD)
@@ -167,7 +167,7 @@ onMounted(() => {
     const frame = props.player.sample()
     analysis.update(delta, frame)
     square.update(analysis, delta, elapsed)
-    audioField.update(delta, analysis.bands, frame.playing)
+    audioField.update(delta, analysis.bands, frame.playing, analysis.stereo)
     city.update(elapsed)
     traffic.update(delta, camera.position)
     train.update(delta)
