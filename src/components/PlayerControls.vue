@@ -35,11 +35,11 @@ defineProps({
   background: rgba(10, 14, 16, 0.72);
   border: 1px solid rgba(255, 176, 0, 0.35);
   color: #ffb000;
-  font: 13px/1.4 ui-monospace, monospace;
+  font: 16px/1.4 var(--ui-font);
   backdrop-filter: blur(4px);
 }
 .title {
-  font-size: 11px;
+  font-size: 8px;
   letter-spacing: 0.2em;
   opacity: 0.7;
 }

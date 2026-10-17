@@ -43,7 +43,7 @@ function step(direction) {
   left: 16px;
   max-width: calc(100vw - 32px);
   color: #e8ece8;
-  font: 14px/1.6 ui-monospace, monospace;
+  font: 16px/1.6 var(--ui-font);
   letter-spacing: 0.06em;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
 }

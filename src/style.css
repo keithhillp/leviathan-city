@@ -1,3 +1,8 @@
+:root {
+  /* Pixel font for all UI; it's crisp at multiples of 8px. */
+  --ui-font: 'Silkscreen', monospace;
+}
+
 html,
 body,
 #app {

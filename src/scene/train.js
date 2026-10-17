@@ -7,7 +7,7 @@ const CAR_GAP = 0.5
 const NOSE_LENGTH = 5
 const BODY = { height: 3.2, width: 3, clearance: 0.4 }
 const SPEED = 150 // units per second
-const WAIT = { min: 15, max: 30 } // seconds between passes
+const WAIT = { min: 10, max: 30 } // seconds between passes
 const FIRST_WAIT = { min: 3, max: 8 }
 const TRAIN_LIGHT = 150
 

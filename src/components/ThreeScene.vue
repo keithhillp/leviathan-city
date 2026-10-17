@@ -237,10 +237,10 @@ onBeforeUnmount(() => {
   background: rgba(10, 14, 16, 0.8);
   border: 1px solid rgba(255, 176, 0, 0.35);
   color: #ffd27a;
-  font: 12px/1.4 ui-monospace, monospace;
+  font: 16px/1.4 var(--ui-font);
 }
 .label {
-  font-size: 10px;
+  font-size: 8px;
   letter-spacing: 0.08em;
   color: #ffb000;
   opacity: 0.75;

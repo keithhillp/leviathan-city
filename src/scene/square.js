@@ -18,8 +18,8 @@ const SCREEN_GAP = 0.25 // distance in front of the facade
 export const CAMERAS = [
   {
     name: 'LEVIATHAN APPROACH',
-    position: new THREE.Vector3(15.14, 5.96, 56.07),
-    target: new THREE.Vector3(-12.58, 36.74, -47.86),
+    position: new THREE.Vector3(14.4, 7.16, 56.59),
+    target: new THREE.Vector3(-13.18, 37.95, -47.34),
   },
   {
     name: 'PLAZA OVERWATCH',
