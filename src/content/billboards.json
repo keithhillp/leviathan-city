@@ -1,0 +1,43 @@
+{
+  "adverts": [
+    { "text": "СПОКОЙСТВИЕ", "sub": "REMAIN CALM" },
+    { "text": "安全第一", "sub": "SAFETY FIRST" },
+    { "text": "배급소", "sub": "RATION CENTRE · DISTRICT 9" },
+    { "text": "夜間外出禁止", "sub": "CURFEW 22:00" },
+    { "text": "نظام", "sub": "ORDER · 秩序" },
+    { "text": "ТРУД", "sub": "NEXT SHIFT 06:00" },
+    { "text": "ラーメン", "sub": "HOT NOODLES · 24H" },
+    { "text": "药房", "sub": "PHARMACY · OPEN" },
+    { "text": "HOTEL", "sub": "ВАКАНСИЙ НЕТ" },
+    { "text": "CAFÉ", "sub": "مقهى · 커피" },
+    { "text": "नींद", "sub": "SLEEP · 睡眠" },
+    { "text": "โรงแรม", "sub": "ROOMS BY THE HOUR" }
+  ],
+
+  "ticker": [
+    "CURFEW 22:00",
+    "夜間外出禁止",
+    "통행금지",
+    "КОМЕНДАНТСКИЙ ЧАС",
+    "RATIONS: SECTOR 4 CLOSED",
+    "配給所 閉鎖",
+    "ACID RAIN CONTINUING",
+    "雨",
+    "ДОЖДЬ"
+  ],
+
+  "neonSigns": {
+    "horizontal": [
+      "ラーメン", "カラオケ", "夜市", "薬局", "电子城", "酒吧", "麻雀", "寿司",
+      "网吧", "ゲーム", "노래방", "편의점", "PC방", "치킨", "БАР", "АПТЕКА",
+      "КИНО", "ОТЕЛЬ 24", "ДИСКО", "РЕМОНТ", "مقهى", "فندق", "होटल", "चाय",
+      "ร้านอาหาร", "NOODLES", "OPEN 24H", "CYBER CAFE", "NO VACANCY", "KARAOKE", "SYNTH LAB", "HOTEL"
+    ],
+    "vertical": [
+      "ホテル", "酒", "ラーメン", "薬", "電脳", "夜", "茶", "麺",
+      "居酒屋", "寿司", "カフェ", "中華", "占い", "銭湯", "電気", "書店",
+      "龍", "網", "喫茶", "酒場", "노래방", "호텔", "약국", "술집",
+      "BAR", "HOTEL", "24H", "КИНО", "БАР", "ЧАЙ", "光", "花"
+    ]
+  }
+}
