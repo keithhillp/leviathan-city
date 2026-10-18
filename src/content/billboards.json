@@ -1,6 +1,12 @@
 {
   "corporateSign": "LEVIATHAN LABS",
 
+  "alert": {
+    "title": "WARNING",
+    "message": "ROGUE AI ATTACK",
+    "lines": ["SHELTER IN PLACE", "暴走AI 攻撃中", "경고: 폭주 AI", "ВНИМАНИЕ: ИИ ВЫШЕЛ ИЗ-ПОД КОНТРОЛЯ", "警告 失控人工智能"]
+  },
+
   "adverts": [
     { "text": "СПОКОЙСТВИЕ", "sub": "REMAIN CALM" },
     { "text": "安全第一", "sub": "SAFETY FIRST" },

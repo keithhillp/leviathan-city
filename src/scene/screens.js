@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { AlertContent } from './screenContent.js'
 
 const PX_PER_UNIT = 22
 const MAX_PX = 1024
@@ -99,8 +100,19 @@ export class Screen {
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.material)
   }
 
+  // Takes the screen over with the emergency alert (or hands it back).
+  setAlert(on) {
+    if (this.alert === on) return
+    this.alert = on
+    if (on && !this.alertContent) {
+      const { width, height } = this.canvas
+      this.alertContent = new AlertContent(this.bufferCtx, width, height)
+    }
+    if (!on) this.content.invalidate?.() // its own picture was drawn over
+  }
+
   get glow() {
-    return this.content.glow
+    return this.alert ? this.alertContent.glow : this.content.glow
   }
 
   // Shows a live video texture (e.g. a helmet cam) instead of the screen's own
@@ -146,7 +158,8 @@ export class Screen {
     if (this.glitchDelay > 0) this.glitchDelay -= delta
     const glitching = this.glitchTime > 0 && this.glitchDelay <= 0
     if (glitching) this.glitchTime -= delta
-    const changed = this.content.draw(this.bufferCtx, width, height, delta, elapsed, analysis)
+    const showing = this.alert ? this.alertContent : this.content
+    const changed = showing.draw(this.bufferCtx, width, height, delta, elapsed, analysis)
     // Static content still needs redrawing while glitching, and once after to restore it.
     if (changed || glitching || this.wasGlitching) {
       if (glitching && this.surging) {
@@ -177,6 +190,7 @@ export class Screen {
       }
     }
     if (this.feed) level *= 1.4 // live camera feeds are darker than the adverts
+    else if (this.alert) level *= 1.6 // the alert should be the brightest thing around
     if (glitching && this.surging) {
       // Overload flash for the first part, then a flickering brownout.
       const progress = 1 - this.glitchTime / this.glitchLength

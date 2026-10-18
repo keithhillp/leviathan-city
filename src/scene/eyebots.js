@@ -21,6 +21,17 @@ const SHOT_SPEED = 60
 const AFTER_FIRING = 0.8 // pause before moving on
 const MAX_PROJECTILES = 24
 
+// Swarming a target (the rogue mech during street incidents): circle it and
+// open fire. Bots shot down fall and crash; they're rebuilt with reviveAll().
+const SWARM_SPEED = 16
+const SWARM_RADIUS = [7, 12]
+const SWARM_HEIGHT = [5, 12] // above the ground
+const SWARM_ORBIT = [0.4, 0.8] // radians per second, either way round
+const SWARM_FIRE_EVERY = [0.3, 0.7] // seconds between bolts
+const SWARM_SPREAD = 1.2
+const SWARM_BOUNDS = 16 // stay this close to the street centre (clear of buildings)
+const FALL_GRAVITY = 25
+
 const EYE = new THREE.Color(3, 3.4, 3.6)
 const EYE_ALARM = new THREE.Color(5, 0.3, 0.2)
 const BEACON = new THREE.Color(6, 0.2, 0.1)
@@ -60,7 +71,7 @@ const additive = (color) =>
 // Spherical eyebots flying between windows on the plaza's building faces and
 // scanning them. `patrol.windows` is a list of { x, y, z, side }: window
 // centres on walls facing the street (side -1 left, 1 right). A failed scan
-// sets the window on fire via `fires`.
+// sets the window on fire via `fires`. They can also be set to swarm a target.
 export function createEyebots({ patrol, fires, count = 5 }) {
   const group = new THREE.Group()
   const metal = new THREE.MeshStandardMaterial({ color: 0x2a2e33, roughness: 0.35, metalness: 0.8 })
@@ -70,8 +81,12 @@ export function createEyebots({ patrol, fires, count = 5 }) {
     const mesh = new THREE.Mesh(projectileGeometry, new THREE.MeshBasicMaterial({ color: PROJECTILE }))
     mesh.visible = false
     group.add(mesh)
-    return { mesh, target: new THREE.Vector3(), bot: null }
+    return { mesh, target: new THREE.Vector3(), bot: null, swarm: false }
   })
+
+  // While set, every bot circles and shoots at this point (a live Vector3).
+  let swarmTarget = null
+  let swarmCallbacks = {}
 
   function pickStop(bot) {
     const spot = patrol.windows[Math.floor(Math.random() * patrol.windows.length)]
@@ -111,7 +126,10 @@ export function createEyebots({ patrol, fires, count = 5 }) {
       aim: new THREE.Vector3(), // the window a failed scan fires at
       window: null, // the window being visited
       side: 1,
-      state: 'travel', // travel -> scan -> (alarm -> firing ->) travel
+      state: 'travel', // travel -> scan -> (alarm -> firing ->) travel; swarm; falling -> dead
+      orbit: { angle: 0, radius: 0, height: 0, speed: 0 },
+      fireTimer: 0,
+      velocity: new THREE.Vector3(),
       timer: 0,
       shotsLeft: 0,
       litFire: false,
@@ -131,17 +149,62 @@ export function createEyebots({ patrol, fires, count = 5 }) {
   const eyeWorld = new THREE.Vector3()
   const wallNormal = new THREE.Vector3()
 
-  function fire(bot) {
+  function fire(bot, swarm = false) {
     const shot = projectiles.find((p) => !p.mesh.visible)
     if (!shot) return
     bot.body.localToWorld(eyeWorld.set(0, 0, RADIUS))
     shot.mesh.position.copy(eyeWorld)
     shot.target.copy(bot.aim)
-    shot.target.y += (Math.random() - 0.5) * SHOT_SPREAD
-    shot.target.z += (Math.random() - 0.5) * SHOT_SPREAD
+    const spread = swarm ? SWARM_SPREAD : SHOT_SPREAD
+    shot.target.x += swarm ? (Math.random() - 0.5) * spread : 0
+    shot.target.y += (Math.random() - 0.5) * spread
+    shot.target.z += (Math.random() - 0.5) * spread
     shot.mesh.lookAt(shot.target)
     shot.mesh.visible = true
     shot.bot = bot
+    shot.swarm = swarm
+  }
+
+  function joinSwarm(bot) {
+    bot.state = 'swarm'
+    bot.orbit.angle = Math.random() * Math.PI * 2
+    bot.orbit.radius = random(SWARM_RADIUS)
+    bot.orbit.height = random(SWARM_HEIGHT)
+    bot.orbit.speed = random(SWARM_ORBIT) * (Math.random() < 0.5 ? -1 : 1)
+    bot.fireTimer = random(SWARM_FIRE_EVERY)
+  }
+
+  // Circles the swarm target, facing it and firing.
+  function swarm(bot, delta) {
+    const { orbit } = bot
+    orbit.angle += orbit.speed * delta
+    toTarget.set(
+      THREE.MathUtils.clamp(swarmTarget.x + Math.cos(orbit.angle) * orbit.radius, -SWARM_BOUNDS, SWARM_BOUNDS),
+      orbit.height,
+      swarmTarget.z + Math.sin(orbit.angle) * orbit.radius,
+    )
+    toTarget.sub(bot.position)
+    const distance = toTarget.length()
+    if (distance > 0.01) bot.position.addScaledVector(toTarget.normalize(), Math.min(distance, SWARM_SPEED * delta))
+    bot.look.copy(swarmTarget)
+    if ((bot.fireTimer -= delta) <= 0) {
+      bot.fireTimer = random(SWARM_FIRE_EVERY)
+      bot.aim.copy(swarmTarget)
+      fire(bot, true)
+    }
+  }
+
+  // Shot down: tumbles out of the sky and crashes.
+  function fall(bot, delta) {
+    bot.velocity.y -= FALL_GRAVITY * delta
+    bot.position.addScaledVector(bot.velocity, delta)
+    bot.body.rotation.x += delta * 6
+    bot.body.rotation.z += delta * 4
+    if (bot.position.y <= RADIUS) {
+      bot.state = 'dead'
+      bot.body.visible = false
+      swarmCallbacks.onCrash?.(bot.position.clone())
+    }
   }
 
   function updateProjectiles(delta) {
@@ -151,6 +214,10 @@ export function createEyebots({ patrol, fires, count = 5 }) {
       const step = SHOT_SPEED * delta
       if (toTarget.length() <= step) {
         shot.mesh.visible = false
+        if (shot.swarm) {
+          swarmCallbacks.onHit?.(shot.target.clone())
+          continue
+        }
         // The first bolt of a volley to land starts the fire.
         if (!shot.bot.litFire) {
           shot.bot.litFire = true
@@ -171,13 +238,58 @@ export function createEyebots({ patrol, fires, count = 5 }) {
       quaternion.copy(body.quaternion).multiply(TURN_AROUND)
       position.set(0, 0, LENS_OFFSET).applyQuaternion(body.quaternion).add(body.position)
     },
+    // Sends every bot to circle and shoot at `target` (a Vector3 that can keep
+    // moving), or back to patrolling with null. onHit(point) is called as bolts
+    // land on it; onCrash(point) when a bot that's been shot down hits the ground.
+    setSwarm(target, callbacks = {}) {
+      swarmTarget = target
+      swarmCallbacks = callbacks
+      for (const bot of bots) {
+        if (target && bot.state !== 'falling' && bot.state !== 'dead') joinSwarm(bot)
+        else if (!target && bot.state === 'swarm') pickStop(bot)
+      }
+    },
+    // Bots currently swarming: [{ index, position }].
+    swarmers() {
+      return bots.flatMap((bot, index) => (bot.state === 'swarm' ? [{ index, position: bot.body.position }] : []))
+    },
+    // Knocks bot `index` out of the sky.
+    shootDown(index) {
+      const bot = bots[index]
+      if (bot.state === 'falling' || bot.state === 'dead') return
+      bot.state = 'falling'
+      bot.velocity.set((Math.random() - 0.5) * 6, 4, (Math.random() - 0.5) * 6)
+    },
+    // Brings destroyed bots back on patrol (out of sight of the cleanup).
+    reviveAll() {
+      for (const bot of bots) {
+        if (bot.state !== 'falling' && bot.state !== 'dead') continue
+        pickStop(bot)
+        bot.position.copy(bot.target)
+        bot.body.rotation.set(0, 0, 0)
+        bot.body.visible = true
+        pickStop(bot)
+      }
+    },
     update(delta, elapsed) {
       for (const bot of bots) {
+        if (bot.state === 'dead') {
+          bot.beam.visible = bot.scanLine.visible = false
+          continue
+        }
+        if (bot.state === 'falling') {
+          fall(bot, delta)
+          bot.body.position.copy(bot.position)
+          bot.beam.visible = bot.scanLine.visible = false
+          continue
+        }
         toTarget.subVectors(bot.target, bot.position)
         const distance = toTarget.length()
         const wallX = bot.window.x
 
-        if (bot.state === 'travel') {
+        if (bot.state === 'swarm') {
+          swarm(bot, delta)
+        } else if (bot.state === 'travel') {
           if (distance < 0.3) {
             bot.state = 'scan'
             bot.timer = random(SCAN_TIME)
@@ -241,7 +353,7 @@ export function createEyebots({ patrol, fires, count = 5 }) {
           bot.window.z,
         )
         bot.scanLine.rotation.y = -bot.side * (Math.PI / 2) // flat on the wall, facing the street
-        const hostile = alarm || bot.state === 'firing'
+        const hostile = alarm || bot.state === 'firing' || bot.state === 'swarm'
         bot.eyeMaterial.color.copy(hostile ? EYE_ALARM : EYE)
 
         // Red antenna light: a quick double blink on its own rhythm, solid

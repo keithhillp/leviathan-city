@@ -15,10 +15,10 @@ const BEACON_OFF = 0.04 // fraction of full brightness between flashes
 const FLASH_RATE = 1.6 // red/blue cycles per second
 const POLICE_LIGHT = 80 // the one real light that follows the nearest police car
 
-// Queueing and wrecks (from the demon attacks).
+// Queueing and wrecks (from the mech attacks).
 const QUEUE_GAP = 1.5 // bumper to bumper in a queue
 const STOP_GAP = 2.5 // stopping short of a blockage
-const BLOCK_LANES = 6 // lanes within this (sideways) of the demon stop for it
+const BLOCK_LANES = 6 // lanes within this (sideways) of the mech stop for it
 const LANE_HALF = 2.2 // a wreck blocks lanes it's within this of
 const MAX_WRECKS = 6
 const GRAVITY = 30
@@ -189,7 +189,7 @@ export function createTraffic({ lanes, minZ, maxZ }) {
   const policeLight = new THREE.PointLight(0xffffff, 0, 30, 2)
   group.add(policeLight)
   let time = 0
-  let block = null // the demon's position ({ x, z }): lanes near it stop short of it
+  let block = null // the mech's position ({ x, z }): lanes near it stop short of it
 
   const zOf = (vehicle) => (vehicle.lane.dir > 0 ? minZ + vehicle.s : maxZ - vehicle.s)
   const sOf = (lane, z) => (lane.dir > 0 ? z - minZ : maxZ - z)
@@ -239,7 +239,7 @@ export function createTraffic({ lanes, minZ, maxZ }) {
   }
 
   // Lane positions (s) that vehicles must stop short of: wrecks lying in the
-  // lane, and the demon for the lanes nearest the street centre.
+  // lane, and the mech for the lanes nearest the street centre.
   function barriers(lane) {
     const list = []
     if (block && Math.abs(lane.x - block.x) < BLOCK_LANES) list.push(sOf(lane, block.z))
@@ -272,7 +272,7 @@ export function createTraffic({ lanes, minZ, maxZ }) {
 
   return {
     group,
-    // Blocks the lanes near `point` ({ x, z }, e.g. the demon) at its z, or null.
+    // Blocks the lanes near `point` ({ x, z }, e.g. the mech) at its z, or null.
     // The point is read every frame, so a moving one can be passed once.
     setBlock(point) {
       block = point

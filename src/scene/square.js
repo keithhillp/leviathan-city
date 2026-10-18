@@ -194,11 +194,17 @@ function patrolWindows() {
 
 export const PATROL = { windows: patrolWindows() }
 
-// Street incidents (demon, hovercraft, troopers): the demon rises on the
+// Street incidents (mech, hovercraft, troopers): the mech rises on the
 // reservation a little in front of the rail bridge, in view of the cameras,
 // then roams the road within `roam` (clear of the buildings, pavements and the
 // bridge's pillars). The craft hovers above it, clear of the bridge and train.
-export const INCIDENT = { x: 0, z: [-2, 8], hoverHeight: 18, roam: { x: [-12, 12], z: [-3, 30] } }
+export const INCIDENT = {
+  x: 0,
+  z: [-2, 8],
+  hoverHeight: 18,
+  roam: { x: [-12, 12], z: [-3, 30] },
+  wallX: PLAZA_HALF_WIDTH, // building faces either side, for stray eye-laser hits
+}
 
 // Faint coloured spill from the larger adverts: [position, index into SCREENS].
 const SPILL_LIGHTS = [
@@ -206,6 +212,7 @@ const SPILL_LIGHTS = [
   [[14, 14, -4], 6],
 ]
 const SPILL_INTENSITY = 120
+const HERO_ALERT_SWAP = 2 // seconds between alert and visualiser on the main screen
 
 // Screen glitches in quiet passages: chance per hit (scaled by how calm the
 // passage is) and the share of screens each glitch hits.
@@ -540,7 +547,11 @@ export function createSquare() {
       { mesh: paint, roughness: 0.3 },
       { mesh: pavements, roughness: 0.3 },
     ],
-    update(analysis, delta, elapsed) {
+    // `alert`: a street incident is on, so the screens show the emergency alert.
+    update(analysis, delta, elapsed, alert) {
+      // The main screen alternates alert / visualiser so the music still shows.
+      hero.setAlert(alert && Math.floor(elapsed / HERO_ALERT_SWAP) % 2 === 0)
+      for (const screen of screens) screen.setAlert(alert)
       // Quiet passages: hits sometimes glitch a few screens for a 16th or 8th note.
       if (analysis.hit && Math.random() < GLITCH.chance * analysis.calm) {
         const duration = analysis.beatInterval * (Math.random() < 0.5 ? 0.25 : 0.5)

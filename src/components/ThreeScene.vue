@@ -159,7 +159,7 @@ onMounted(() => {
   eyebots = createEyebots({ patrol: PATROL, fires })
   scene.add(eyebots.group, fires.group)
 
-  incident = createIncident({ fires, traffic, location: INCIDENT })
+  incident = createIncident({ fires, traffic, eyebots, location: INCIDENT })
   scene.add(incident.group)
   helmetFeeds = createHelmetFeeds({ renderer, scene, incident, screens: square.feedScreens })
 
@@ -203,7 +203,7 @@ onMounted(() => {
     const elapsed = timer.getElapsed()
     const frame = props.player.sample()
     analysis.update(delta, frame)
-    square.update(analysis, delta, elapsed)
+    square.update(analysis, delta, elapsed, incident.attacking)
     patterns.update(delta, analysis, frame.title)
     palette.update(delta, analysis, frame.title)
     audioField.update(delta, analysis, frame.playing)
