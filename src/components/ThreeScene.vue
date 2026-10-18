@@ -7,13 +7,15 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
 import { createCity } from '../scene/city.js'
-import { BRIDGE, CAMERAS, PATROL, ROAD, createSquare } from '../scene/square.js'
+import { BRIDGE, CAMERAS, INCIDENT, PATROL, ROAD, createSquare } from '../scene/square.js'
 import { createTraffic } from '../scene/traffic.js'
 import { createTrain } from '../scene/train.js'
 import { createSky } from '../scene/sky.js'
 import { createWetness } from '../scene/wetness.js'
 import { createEyebots } from '../scene/eyebots.js'
 import { createFires } from '../scene/fires.js'
+import { createIncident } from '../scene/incident.js'
+import { createHelmetFeeds } from '../scene/helmetFeeds.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -38,6 +40,8 @@ const COORDS_INTERVAL = 0.1 // seconds between coordinate readout updates
 const cameraIndex = ref(0)
 const activeCamera = () => CAMERAS[cameraIndex.value]
 const lookAhead = new THREE.Vector3()
+// Set when the helmet cam is selected but no trooper is out.
+const signalLost = ref(false)
 
 // Free camera for finding new viewpoints: toggle with F, or start with ?freecam.
 const freeCam = ref(new URLSearchParams(window.location.search).has('freecam'))
@@ -49,7 +53,8 @@ const copied = ref(false)
 // Three.js objects are kept out of Vue reactivity on purpose: proxying them
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
-let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires, patterns, palette
+let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires, patterns, palette, incident
+let helmetFeeds
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -60,6 +65,7 @@ function onKeyDown(event) {
   if (key === 'f') freeCam.value = !freeCam.value
   if (key === 'p') ps1.value = !ps1.value
   if (key === 'c') cameraIndex.value = (cameraIndex.value + 1) % CAMERAS.length
+  if (key === 'i') incident?.trigger() // start a street incident now
   const number = Number(key)
   if (number >= 1 && number <= CAMERAS.length) cameraIndex.value = number - 1
 }
@@ -152,6 +158,10 @@ onMounted(() => {
   eyebots = createEyebots({ patrol: PATROL, fires })
   scene.add(eyebots.group, fires.group)
 
+  incident = createIncident({ fires, location: INCIDENT })
+  scene.add(incident.group)
+  helmetFeeds = createHelmetFeeds({ renderer, scene, incident, screens: square.feedScreens })
+
   wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
 
   // After everything is in the scene, so every material gets vertex snapping.
@@ -202,6 +212,8 @@ onMounted(() => {
     sky.update(delta, analysis)
     eyebots.update(delta, elapsed)
     fires.update(delta, elapsed)
+    incident.update(delta, elapsed)
+    helmetFeeds.update()
     rain.update(delta, camera.position)
 
     if (freeCam.value) {
@@ -212,8 +224,18 @@ onMounted(() => {
       }
     } else if (activeCamera().follow === 'eyebot') {
       eyebots.viewpoint(activeCamera().bot, camera.position, camera.quaternion)
+      if (signalLost.value) signalLost.value = false
+    } else if (
+      activeCamera().follow === 'trooper' &&
+      incident.viewpoint(activeCamera().trooper, camera.position, camera.quaternion)
+    ) {
+      if (signalLost.value) signalLost.value = false
     } else {
-      const { position, target } = activeCamera()
+      // Fixed cameras, and the helmet cam's fallback (the default view) when no
+      // trooper is out.
+      const lost = activeCamera().follow === 'trooper'
+      if (signalLost.value !== lost) signalLost.value = lost
+      const { position, target } = activeCamera().position ? activeCamera() : CAMERAS[0]
       camera.position.set(
         position.x + Math.sin(elapsed * 0.13) * SWAY,
         position.y + Math.sin(elapsed * 0.21) * SWAY * 0.3,
@@ -233,6 +255,7 @@ onBeforeUnmount(() => {
   controls.dispose()
   audioField.texture.dispose()
   wetness.dispose()
+  helmetFeeds.dispose()
   scene.traverse((obj) => {
     obj.geometry?.dispose()
     for (const material of [obj.material].flat().filter(Boolean)) {
@@ -250,8 +273,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="container" class="scene"></div>
-  <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" />
-  <div v-if="CAMERAS[cameraIndex].follow && !freeCam" class="reticle"></div>
+  <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" @incident="incident?.trigger()" />
+  <div v-if="CAMERAS[cameraIndex].follow && !freeCam && !signalLost" class="reticle"></div>
+  <div v-if="signalLost && CAMERAS[cameraIndex].follow === 'trooper' && !freeCam" class="no-signal">
+    NO SIGNAL<br />HELMET CAM OFFLINE
+  </div>
   <div v-if="freeCam" class="coords">
     <div class="label">FREE CAM · F to exit · drag rotate · right-drag pan · scroll zoom</div>
     <pre>{{ coords }}</pre>
@@ -263,6 +289,19 @@ onBeforeUnmount(() => {
 .scene {
   width: 100%;
   height: 100%;
+}
+.no-signal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 16px 24px;
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid rgba(232, 236, 232, 0.4);
+  color: #e8ece8;
+  font: 16px/1.6 var(--ui-font);
+  text-align: center;
+  pointer-events: none;
 }
 .reticle {
   position: fixed;

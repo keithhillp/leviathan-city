@@ -103,6 +103,13 @@ export class Screen {
     return this.content.glow
   }
 
+  // Shows a live video texture (e.g. a helmet cam) instead of the screen's own
+  // content, or goes back to it with null.
+  setFeed(texture) {
+    this.feed = texture
+    this.material.map = texture ?? this.texture
+  }
+
   // Corrupts the picture for `duration` seconds (re-randomised every frame),
   // starting after `delay`. A `surge` is a power overload: a blown-out flash,
   // then a flickering brownout, with the picture rolling vertically.
@@ -169,6 +176,7 @@ export class Screen {
         level *= Math.random() < 0.5 ? 0.25 : 0.8
       }
     }
+    if (this.feed) level *= 1.4 // live camera feeds are darker than the adverts
     if (glitching && this.surging) {
       // Overload flash for the first part, then a flickering brownout.
       const progress = 1 - this.glitchTime / this.glitchLength

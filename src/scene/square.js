@@ -38,6 +38,8 @@ export const CAMERAS = [
   },
   // First-person feed from an eyebot (`bot` picks which one), with a wider lens.
   { name: 'EYEBOT LIVE FEED', follow: 'eyebot', bot: 0, fov: 70 },
+  // A trooper's helmet cam during street incidents (no signal otherwise).
+  { name: 'TROOPER HELMET CAM', follow: 'trooper', trooper: 0, fov: 75 },
 ]
 
 // Traffic runs down the plaza between a tunnel in the tower's base and the
@@ -191,6 +193,11 @@ function patrolWindows() {
 }
 
 export const PATROL = { windows: patrolWindows() }
+
+// Street incidents (demon, hovercraft, troopers): on the reservation (x = 0,
+// clear of traffic) a little in front of the rail bridge, in view of the
+// cameras; the craft hovers above it, clear of the bridge and the train.
+export const INCIDENT = { x: 0, z: [-2, 8], hoverHeight: 18 }
 
 // Faint coloured spill from the larger adverts: [position, index into SCREENS].
 const SPILL_LIGHTS = [
@@ -521,6 +528,8 @@ export function createSquare() {
   return {
     group,
     heroCenter,
+    // Advert screens and dead panels: they switch to live helmet cams during incidents.
+    feedScreens: screens.filter((s) => s.content instanceof AdsContent || s.content instanceof DeadContent),
     // Landmarks the light patterns can start from.
     patternPlaces: { heroCenter, signCenter: sign.position.clone(), wallX: PLAZA_HALF_WIDTH },
     // Rain-soaked surfaces near road level, for the wet reflections.
