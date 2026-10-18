@@ -16,6 +16,8 @@ import { createEyebots } from '../scene/eyebots.js'
 import { createFires } from '../scene/fires.js'
 import { createIncident } from '../scene/incident.js'
 import { createHelmetFeeds } from '../scene/helmetFeeds.js'
+import { createHelicopter } from '../scene/helicopter.js'
+import { createAirTraffic } from '../scene/airTraffic.js'
 import { createRain } from '../scene/rain.js'
 import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
@@ -55,7 +57,7 @@ const copied = ref(false)
 // is slow and breaks some internals.
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
 let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires, patterns, palette, incident
-let helmetFeeds
+let helmetFeeds, helicopter, airTraffic
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -67,6 +69,7 @@ function onKeyDown(event) {
   if (key === 'p') ps1.value = !ps1.value
   if (key === 'c') cameraIndex.value = (cameraIndex.value + 1) % CAMERAS.length
   if (key === 'i') incident?.trigger() // start a street incident now
+  if (key === 'h') helicopter?.trigger(camera) // call in a rooftop landing now
   const number = Number(key)
   if (number >= 1 && number <= CAMERAS.length) cameraIndex.value = number - 1
 }
@@ -163,6 +166,11 @@ onMounted(() => {
   scene.add(incident.group)
   helmetFeeds = createHelmetFeeds({ renderer, scene, incident, screens: square.feedScreens })
 
+  helicopter = createHelicopter({ rooftops: city.rooftops })
+  scene.add(helicopter.group)
+  airTraffic = createAirTraffic()
+  scene.add(airTraffic.group)
+
   wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
 
   // After everything is in the scene, so every material gets vertex snapping.
@@ -215,6 +223,8 @@ onMounted(() => {
     fires.update(delta, elapsed)
     incident.update(delta, elapsed)
     helmetFeeds.update()
+    helicopter.update(delta, elapsed, camera)
+    airTraffic.update(delta, elapsed)
     rain.update(delta, camera.position)
 
     if (freeCam.value) {

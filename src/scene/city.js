@@ -187,7 +187,9 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
   // Own random stream, so adding or tuning signs doesn't reshuffle the layout.
   const signs = new SignBuilder(mulberry32(seed + 1), maxAnisotropy)
 
+  const rooftops = [] // { x, z, w, d, y } for anything that wants to land on them
   const addBuilding = (x, z, w, d, floors, faces) => {
+    rooftops.push({ x, z, w, d, y: floors * FLOOR_H })
     const variant = Math.floor(rng() * facadeTextures.length)
     facadeGeometries[variant].push(facadeGeometry(rng, x, z, w, d, floors, concreteTint(rng)))
     addRoofClutter(rng, plainGeometries, x, z, w, d, floors * FLOOR_H)
@@ -286,6 +288,7 @@ export function createCity({ audioField, seed = 17, maxAnisotropy = 1 } = {}) {
   return {
     group,
     wetSurfaces: [{ mesh: ground, puddles: true }],
+    rooftops,
     update(elapsed) {
       citadel.update(elapsed)
       signMesh.update(elapsed)

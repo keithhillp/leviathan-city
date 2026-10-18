@@ -4,8 +4,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 // A scripted street incident: a rogue AI war mech crashes down onto the road
 // and runs amok, a hovercraft flies in and lights it up, troopers rope down and
 // take it out, its wreck is winched aboard and the craft leaves. Runs every so often (or on demand via trigger()).
-const INTERVAL = [70, 130] // seconds between incidents
-const FIRST_DELAY = 40
+const INTERVAL = [480, 900] // seconds between incidents (8-15 minutes)
+const FIRST_DELAY = 300 // 5 minutes after the page loads
 
 const DROP_TIME = 2.5 // falling from DROP_HEIGHT to the road
 const DROP_HEIGHT = 70
