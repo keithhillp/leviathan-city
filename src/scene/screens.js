@@ -6,6 +6,9 @@ const MAX_PX = 1024
 const LED_PITCH = 3 // px per LED cell in the overlay
 const FLICKER_CHANCE = 0.15 // per second, for screens with `flicker`
 const GLITCH_COLOURS = ['#ff00aa', '#00ffee', '#000000', '#ffffff']
+// Seconds between redraws of animated content: just under 1/30, so a 60 fps
+// display redraws (and re-uploads the texture) every other frame.
+const DRAW_INTERVAL = 0.03
 
 function makeCanvas(w, h) {
   const canvas = document.createElement('canvas')
@@ -59,7 +62,8 @@ function createGrime(w, h, heavy) {
 
 // A screen on a building: content draws into a persistent buffer, which is
 // copied to the texture canvas with the grime overlay on top. Content returns
-// true from draw() when it changed, so static screens cost nothing per frame.
+// true from draw() when it changed, so static screens cost nothing per frame;
+// animated ones are redrawn at most every DRAW_INTERVAL.
 export class Screen {
   constructor({
     width,
@@ -95,6 +99,7 @@ export class Screen {
     this.glitchDelay = 0
     this.surging = false
     this.wasGlitching = false
+    this.sinceDraw = Math.random() * DRAW_INTERVAL // staggered, so screens don't all upload on one frame
     this.material = new THREE.MeshBasicMaterial({ map: this.texture })
     this.material.color.setScalar(brightness)
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), this.material)
@@ -158,23 +163,27 @@ export class Screen {
     if (this.glitchDelay > 0) this.glitchDelay -= delta
     const glitching = this.glitchTime > 0 && this.glitchDelay <= 0
     if (glitching) this.glitchTime -= delta
-    const showing = this.alert ? this.alertContent : this.content
-    const changed = showing.draw(this.bufferCtx, width, height, delta, elapsed, analysis)
-    // Static content still needs redrawing while glitching, and once after to restore it.
-    if (changed || glitching || this.wasGlitching) {
-      if (glitching && this.surging) {
-        // Picture rolls vertically as the power fails.
-        const roll = Math.random() * height
-        this.ctx.drawImage(this.buffer, 0, roll - height)
-        this.ctx.drawImage(this.buffer, 0, roll)
-      } else {
-        this.ctx.drawImage(this.buffer, 0, 0)
+    this.sinceDraw += delta
+    if (this.sinceDraw >= DRAW_INTERVAL) {
+      const showing = this.alert ? this.alertContent : this.content
+      const changed = showing.draw(this.bufferCtx, width, height, this.sinceDraw, elapsed, analysis)
+      this.sinceDraw = 0
+      // Static content still needs redrawing while glitching, and once after to restore it.
+      if (changed || glitching || this.wasGlitching) {
+        if (glitching && this.surging) {
+          // Picture rolls vertically as the power fails.
+          const roll = Math.random() * height
+          this.ctx.drawImage(this.buffer, 0, roll - height)
+          this.ctx.drawImage(this.buffer, 0, roll)
+        } else {
+          this.ctx.drawImage(this.buffer, 0, 0)
+        }
+        if (glitching) this.drawGlitch(width, height)
+        this.ctx.drawImage(this.grime, 0, 0)
+        this.texture.needsUpdate = true
       }
-      if (glitching) this.drawGlitch(width, height)
-      this.ctx.drawImage(this.grime, 0, 0)
-      this.texture.needsUpdate = true
+      this.wasGlitching = glitching
     }
-    this.wasGlitching = glitching
 
     let level = this.brightness
     if (this.pulse) {

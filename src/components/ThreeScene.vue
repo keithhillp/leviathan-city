@@ -23,7 +23,7 @@ import { AudioField } from '../scene/audioField.js'
 import { AudioAnalysis } from '../scene/analysis.js'
 import { createPatterns } from '../scene/patterns.js'
 import { createPalette } from '../scene/colours.js'
-import { applyPS1, createPS1Pass } from '../scene/ps1.js'
+import { PIXEL_HEIGHT, applyPS1, createPS1Pass } from '../scene/ps1.js'
 import CctvOverlay from './CctvOverlay.vue'
 
 const props = defineProps({
@@ -38,6 +38,11 @@ const PORTRAIT_FOV = 85
 const SWAY = 0.25 // a slow handheld drift so the fixed view doesn't feel frozen
 const COORDS_INTERVAL = 0.1 // seconds between coordinate readout updates
 const SHAKE = 0.6 // camera shake at full strength (units)
+const MAX_PIXEL_RATIO = 2
+// With the PS1 look on, the picture is resampled down to PIXEL_HEIGHT rows, so
+// the scene (and bloom) only needs rendering at a couple of times that, not at
+// the full screen resolution.
+const PS1_RENDER_ROWS = PIXEL_HEIGHT * 2
 
 // Which CCTV camera is live: C cycles, 1-9 jump straight to one.
 const cameraIndex = ref(0)
@@ -58,6 +63,13 @@ const copied = ref(false)
 let renderer, scene, camera, controls, composer, resizeObserver, city, square, traffic, rain, audioField
 let analysis, ps1Pass, ps1Style, train, sky, wetness, eyebots, fires, patterns, palette, incident
 let helmetFeeds, helicopter, airTraffic
+
+// Resolution the scene renders at; the canvas itself stays at full resolution.
+function applyRenderScale() {
+  const full = Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO)
+  const height = container.value.clientHeight
+  composer.setPixelRatio(ps1.value && height > 0 ? Math.min(full, PS1_RENDER_ROWS / height) : full)
+}
 
 const fmt = (v) => `(${v.x.toFixed(2)}, ${v.y.toFixed(2)}, ${v.z.toFixed(2)})`
 
@@ -83,6 +95,7 @@ async function copyCoords() {
 watch(ps1, (on) => {
   if (ps1Pass) ps1Pass.enabled = on
   ps1Style?.setEnabled(on)
+  if (composer) applyRenderScale()
 })
 
 watch(freeCam, (on) => {
@@ -107,8 +120,10 @@ watch(cameraIndex, () => {
 onMounted(() => {
   const el = container.value
 
-  renderer = new THREE.WebGLRenderer({ antialias: true })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  // No antialias: the scene renders into the composer's targets, so the canvas
+  // only ever gets the final full-screen pass.
+  renderer = new THREE.WebGLRenderer()
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO))
   renderer.setSize(el.clientWidth, el.clientHeight)
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.1
@@ -171,7 +186,12 @@ onMounted(() => {
   airTraffic = createAirTraffic()
   scene.add(airTraffic.group)
 
-  wetness = createWetness({ renderer, scene, surfaces: [...city.wetSurfaces, ...square.wetSurfaces] })
+  wetness = createWetness({
+    renderer,
+    scene,
+    surfaces: [...city.wetSurfaces, ...square.wetSurfaces],
+    skip: [rain.object], // too faint to see in the reflections
+  })
 
   // After everything is in the scene, so every material gets vertex snapping.
   ps1Style = applyPS1(scene)
@@ -192,6 +212,7 @@ onMounted(() => {
   ps1Pass = createPS1Pass()
   ps1Pass.enabled = ps1.value
   composer.addPass(ps1Pass)
+  applyRenderScale()
 
   resizeObserver = new ResizeObserver(() => {
     camera.aspect = el.clientWidth / el.clientHeight
@@ -200,6 +221,7 @@ onMounted(() => {
     applyLens()
     renderer.setSize(el.clientWidth, el.clientHeight)
     composer.setSize(el.clientWidth, el.clientHeight)
+    applyRenderScale()
   })
   resizeObserver.observe(el)
 

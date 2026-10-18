@@ -8,6 +8,9 @@ const EMBERS = 10
 const SMOKE = 5
 const WIDTH = 2.6 // spread of the flames across the wall
 const FIRE_LIGHT = 90
+// Every light in the scene costs every lit pixel, even when it's off, so the
+// fires share a couple of lights, given to whichever are burning brightest.
+const FIRE_LIGHTS = 2
 
 const FLAME_COLOUR = new THREE.Color(2.6, 1.3, 0.45) // HDR so the flames bloom
 const EMBER_COLOUR = new THREE.Color(3, 1.2, 0.3)
@@ -53,6 +56,11 @@ const sprite = (map, colour, additive) =>
 // smoke and a flickering orange light.
 export function createFires() {
   const group = new THREE.Group()
+  const lights = Array.from({ length: FIRE_LIGHTS }, () => {
+    const light = new THREE.PointLight(0xff7a2a, 0, 26, 2)
+    group.add(light)
+    return light
+  })
 
   const fires = Array.from({ length: MAX_FIRES }, () => {
     const fire = new THREE.Group()
@@ -76,16 +84,13 @@ export function createFires() {
       fire.add(puff)
       return puff
     })
-    const light = new THREE.PointLight(0xff7a2a, 0, 26, 2)
-    light.position.y = 1
-    fire.add(light)
     group.add(fire)
     return {
       group: fire,
       flames,
       embers,
       smoke,
-      light,
+      glow: 0, // how bright its light would be
       age: Infinity,
       normal: new THREE.Vector3(),
       along: new THREE.Vector3(), // across the wall
@@ -110,7 +115,7 @@ export function createFires() {
         const strength = THREE.MathUtils.clamp((BURN_TIME - fire.age) / FADE_TIME, 0, 1) * Math.min(1, fire.age * 4)
         if (fire.age > BURN_TIME) {
           fire.group.visible = false
-          fire.light.intensity = 0
+          fire.glow = 0
           continue
         }
         // Flames along the wall, licking upwards and flickering.
@@ -142,8 +147,14 @@ export function createFires() {
           puff.scale.setScalar(1.5 + t * 3)
           puff.material.opacity = Math.sin(t * Math.PI) * 0.45 * strength
         }
-        fire.light.intensity = FIRE_LIGHT * strength * (0.7 + Math.random() * 0.3)
+        fire.glow = FIRE_LIGHT * strength * (0.7 + Math.random() * 0.3)
       }
+      const brightest = fires.filter((fire) => fire.glow > 0).sort((a, b) => b.glow - a.glow)
+      lights.forEach((light, i) => {
+        const fire = brightest[i]
+        light.intensity = fire ? fire.glow : 0
+        if (fire) light.position.copy(fire.group.position).y += 1
+      })
     },
   }
 }

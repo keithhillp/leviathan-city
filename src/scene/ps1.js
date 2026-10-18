@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 
 // Virtual vertical resolution shared by the pixelation and the vertex snapping.
-const PIXEL_HEIGHT = 240
+export const PIXEL_HEIGHT = 240
 
 // PlayStation-style output: a low virtual resolution, 15-bit colour (32 levels
 // per channel) and 4x4 ordered dithering at that chunky pixel size. Runs after

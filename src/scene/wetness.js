@@ -6,7 +6,12 @@ import * as THREE from 'three'
 // a plain environment map on the road materials, so there's no special floor
 // object to fight the PS1 snapping.
 const RESOLUTION = 128 // per cube face
-const CAPTURE_EVERY = 3 // frames (~20 per second)
+// One face is re-rendered per frame, so the cost is spread evenly instead of
+// six scene renders landing on the same frame.
+const FACES = 6 // +x, -x, +y, -y, +z, -z
+// Only reflections of things above the road are ever looked up, so the face
+// looking down is just filled with the sky colour (all it would see anyway).
+const DOWN = 3
 const PUDDLE_TILE = 24 // world units per repeat of the puddle pattern
 const REFLECTION_STRENGTH = 1
 
@@ -41,7 +46,8 @@ function createPuddleTexture(repeat) {
 
 // `surfaces` are { mesh, roughness?, puddles? }: puddles uses the puddle
 // pattern (for big flat ground planes); otherwise a flat wet roughness.
-export function createWetness({ renderer, scene, surfaces }) {
+// `skip` are other objects left out of the reflections.
+export function createWetness({ renderer, scene, surfaces, skip = [] }) {
   const target = new THREE.WebGLCubeRenderTarget(RESOLUTION, { type: THREE.HalfFloatType })
   const cubeCamera = new THREE.CubeCamera(0.5, 1500, target)
   scene.add(cubeCamera)
@@ -60,15 +66,34 @@ export function createWetness({ renderer, scene, surfaces }) {
     material.needsUpdate = true
   }
 
-  let frame = 0
+  // Left out of the reflections: the surfaces themselves (they'd block the view
+  // up from below the road) and anything in `skip`.
+  const hidden = [...surfaces.map(({ mesh }) => mesh), ...skip]
+  const empty = new THREE.Scene()
+  let face = 0
   return {
     update(camera) {
-      if (frame++ % CAPTURE_EVERY !== 0) return
-      cubeCamera.position.set(camera.position.x, -camera.position.y, camera.position.z)
-      // The surfaces themselves would block the view up from below the road.
-      for (const { mesh } of surfaces) mesh.visible = false
-      cubeCamera.update(renderer, scene)
-      for (const { mesh } of surfaces) mesh.visible = true
+      if (cubeCamera.coordinateSystem !== renderer.coordinateSystem) {
+        cubeCamera.coordinateSystem = renderer.coordinateSystem
+        cubeCamera.updateCoordinateSystem()
+      }
+      // Each sweep of the faces is taken from one position.
+      if (face === 0) cubeCamera.position.set(camera.position.x, -camera.position.y, camera.position.z)
+      const previous = renderer.getRenderTarget()
+      renderer.setRenderTarget(target, face)
+      if (face === DOWN) {
+        empty.background = scene.background
+        renderer.render(empty, cubeCamera.children[face])
+      } else {
+        const visible = hidden.map((object) => object.visible)
+        for (const object of hidden) object.visible = false
+        renderer.render(scene, cubeCamera.children[face])
+        hidden.forEach((object, i) => (object.visible = visible[i]))
+      }
+      renderer.setRenderTarget(previous)
+      face = (face + 1) % FACES
+      // Re-filter for the rough surfaces once the sweep is complete.
+      if (face === 0) target.texture.needsPMREMUpdate = true
     },
     dispose() {
       target.dispose()

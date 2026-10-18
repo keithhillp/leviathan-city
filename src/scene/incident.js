@@ -225,6 +225,7 @@ function createSparks() {
   )
   lines.frustumCulled = false
   let next = 0
+  let active = false // any sparks still flying (or not yet cleared away)
   return {
     object: lines,
     emit(at, amount, speed) {
@@ -238,14 +239,18 @@ function createSparks() {
           .multiplyScalar(speed * (0.4 + Math.random()))
         spark.life = SPARK_LIFE * (0.5 + Math.random())
       }
+      active = true
     },
     update(delta) {
+      if (!active) return
+      active = false
       sparks.forEach((spark, i) => {
         const k = i * 6
         if (spark.life <= 0) {
           positions.fill(0, k, k + 6) // zero length: invisible
           return
         }
+        active = true
         spark.life -= delta
         spark.velocity.y -= SPARK_GRAVITY * delta
         spark.position.addScaledVector(spark.velocity, delta)
