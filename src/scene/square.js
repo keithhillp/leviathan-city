@@ -28,8 +28,8 @@ export const CAMERAS = [
   },
   {
     name: 'STREET LEVEL',
-    position: new THREE.Vector3(16.53, 0.59, 53.76),
-    target: new THREE.Vector3(4.09, 7.38, -57.21),
+    position: new THREE.Vector3(16.89, 1.64, 53.49),
+    target: new THREE.Vector3(11.27, 6.33, 34.88),
   },
   {
     name: 'ROOFTOP',
