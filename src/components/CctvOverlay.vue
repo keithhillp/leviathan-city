@@ -3,9 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const props = defineProps({
   cameras: { type: Array, required: true },
+  // The scene's one-shot event button (a street incident, a warp arrival...).
+  action: { type: Object, default: () => ({ label: '⚠ Incident', title: 'Trigger a street incident (I)' }) },
 })
 const index = defineModel({ type: Number, required: true })
-defineEmits(['incident'])
+defineEmits(['action'])
 
 const now = ref(new Date())
 let clock
@@ -32,7 +34,7 @@ function step(direction) {
       <span>CAM {{ pad(index + 1) }} · {{ cameras[index].name }}</span>
       <button title="Next camera (C cycles, 1–9 jump)" @click="step(1)">▶</button>
     </div>
-    <button class="incident" title="Trigger a street incident (I)" @click="$emit('incident')">⚠ Incident</button>
+    <button class="action" :title="action.title" @click="$emit('action')">{{ action.label }}</button>
   </div>
   <!-- Keyed on the camera so the static burst replays on every switch. -->
   <div :key="index" class="static"></div>
@@ -49,7 +51,7 @@ function step(direction) {
   letter-spacing: 0.06em;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
 }
-.incident {
+.action {
   margin-top: 6px;
   color: #ff5040;
   border-color: rgba(255, 80, 64, 0.6);

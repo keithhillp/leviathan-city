@@ -19,7 +19,7 @@ const random = ([min, max]) => min + Math.random() * (max - min)
 
 // Each variant: hull geometry, engine glow discs (pointing down), colour,
 // engine colour, flight height and speed, plus optional lit `windows`.
-const VARIANTS = {
+export const VARIANTS = {
   gunship: {
     hull: () =>
       mergeGeometries([
@@ -103,7 +103,7 @@ const VARIANTS = {
   },
 }
 
-function createShip(spec) {
+export function createShip(spec) {
   const group = new THREE.Group()
   group.add(
     new THREE.Mesh(spec.hull(), new THREE.MeshStandardMaterial({ color: spec.colour, roughness: 0.4, metalness: 0.7 })),

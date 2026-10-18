@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="container" class="scene"></div>
-  <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" @incident="incident?.trigger()" />
+  <CctvOverlay v-model="cameraIndex" :cameras="CAMERAS" @action="incident?.trigger()" />
   <div v-if="CAMERAS[cameraIndex].follow && !freeCam && !signalLost" class="reticle"></div>
   <div v-if="signalLost && CAMERAS[cameraIndex].follow === 'trooper' && !freeCam" class="no-signal">
     NO SIGNAL<br />HELMET CAM OFFLINE
