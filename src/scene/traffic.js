@@ -15,6 +15,19 @@ const BEACON_OFF = 0.04 // fraction of full brightness between flashes
 const FLASH_RATE = 1.6 // red/blue cycles per second
 const POLICE_LIGHT = 80 // the one real light that follows the nearest police car
 
+// Queueing and wrecks (from the demon attacks).
+const QUEUE_GAP = 1.5 // bumper to bumper in a queue
+const STOP_GAP = 2.5 // stopping short of a blockage
+const BLOCK_LANES = 6 // lanes within this (sideways) of the demon stop for it
+const LANE_HALF = 2.2 // a wreck blocks lanes it's within this of
+const MAX_WRECKS = 6
+const GRAVITY = 30
+const BOUNCE = 0.3
+const SETTLE_SPEED = 2 // below this a wreck comes to rest
+const CHARRED = new THREE.Color(0x0d0b0a)
+// Parts that go dark on a wreck (lights, glow) and parts that stay (bodywork).
+const BODYWORK = ['body', 'livery']
+
 const box = (w, h, d, x, y, z) => new THREE.BoxGeometry(w, h, d).translate(x, y, z)
 
 function lightPair(spread, z, y, w, h) {
@@ -31,6 +44,7 @@ const VEHICLES = {
   car: {
     chance: 0.72,
     length: 4.4,
+    height: 1.65,
     colours: ['#1b1d20', '#2a2d31', '#3b1f1c', '#1c2733', '#3e3e36', '#5c4c1c'],
     body: carBody,
     headlights: () => lightPair(0.65, 2.22, 0.8, 0.42, 0.16),
@@ -40,6 +54,7 @@ const VEHICLES = {
   lorry: {
     chance: 0.2,
     length: 11,
+    height: 4.3,
     colours: ['#8a8a82', '#4d5257', '#5e2f22', '#2f3a33', '#6b6250'],
     body: () =>
       mergeGeometries([
@@ -56,6 +71,7 @@ const VEHICLES = {
   police: {
     chance: 0.08,
     length: 4.4,
+    height: 1.8,
     colours: ['#0c0e12', '#141c2c'],
     body: carBody,
     livery: () => mergeGeometries([box(1.94, 0.22, 3.2, 0, 0.78, 0)]), // stripe along the doors
@@ -132,7 +148,7 @@ export function createTraffic({ lanes, minZ, maxZ }) {
       group.add(mesh)
       meshes[part] = mesh
     }
-    return { spec, meshes: Object.values(meshes), body: meshes.body }
+    return { spec, meshes: Object.values(meshes), parts: meshes, body: meshes.body }
   })
 
   const colour = new THREE.Color()
@@ -173,9 +189,140 @@ export function createTraffic({ lanes, minZ, maxZ }) {
   const policeLight = new THREE.PointLight(0xffffff, 0, 30, 2)
   group.add(policeLight)
   let time = 0
+  let block = null // the demon's position ({ x, z }): lanes near it stop short of it
+
+  const zOf = (vehicle) => (vehicle.lane.dir > 0 ? minZ + vehicle.s : maxZ - vehicle.s)
+  const sOf = (lane, z) => (lane.dir > 0 ? z - minZ : maxZ - z)
+  const spin = new THREE.Quaternion()
+  const euler = new THREE.Euler()
+
+  function placeWreck(vehicle) {
+    const { wreck } = vehicle
+    matrix.compose(wreck.position, wreck.quaternion, one)
+    for (const type of types) {
+      for (const [part, mesh] of Object.entries(type.parts)) {
+        const shown = type === vehicle.type && BODYWORK.includes(part)
+        mesh.setMatrixAt(vehicle.index, shown ? matrix : hidden)
+      }
+    }
+  }
+
+  function updateWreck(vehicle, delta) {
+    const { wreck } = vehicle
+    const restY = vehicle.type.spec.height
+    if (!wreck.settled) {
+      wreck.velocity.y -= GRAVITY * delta
+      wreck.position.addScaledVector(wreck.velocity, delta)
+      spin.setFromEuler(euler.set(wreck.spin.x * delta, wreck.spin.y * delta, wreck.spin.z * delta))
+      wreck.quaternion.multiply(spin)
+      if (wreck.position.y <= 0.6 && wreck.velocity.y < 0) {
+        if (!wreck.landed) {
+          wreck.landed = true
+          wreck.onLand?.(wreck.position.clone())
+        }
+        wreck.velocity.multiplyScalar(BOUNCE)
+        wreck.velocity.y = Math.abs(wreck.velocity.y)
+        wreck.spin.multiplyScalar(0.4)
+        wreck.position.y = 0.6
+        if (wreck.velocity.length() < SETTLE_SPEED) {
+          wreck.settled = true
+          // Come to rest on its roof, facing wherever it ended up.
+          const yaw = euler.setFromQuaternion(wreck.quaternion, 'YXZ').y
+          wreck.rest = new THREE.Quaternion().setFromEuler(euler.set(0, yaw, Math.PI, 'YXZ'))
+        }
+      }
+    } else {
+      wreck.quaternion.slerp(wreck.rest, Math.min(1, delta * 6))
+      wreck.position.y += (restY - wreck.position.y) * Math.min(1, delta * 6)
+    }
+    placeWreck(vehicle)
+  }
+
+  // Lane positions (s) that vehicles must stop short of: wrecks lying in the
+  // lane, and the demon for the lanes nearest the street centre.
+  function barriers(lane) {
+    const list = []
+    if (block && Math.abs(lane.x - block.x) < BLOCK_LANES) list.push(sOf(lane, block.z))
+    for (const v of vehicles) {
+      if (v.wreck && v.wreck.landed && Math.abs(v.wreck.position.x - lane.x) < LANE_HALF) {
+        list.push(sOf(lane, v.wreck.position.z))
+      }
+    }
+    return list
+  }
+
+  function drive(delta) {
+    for (const lane of lanes) {
+      const stops = barriers(lane)
+      // Front of the queue first, so each vehicle can stop behind the one ahead.
+      const queue = vehicles.filter((v) => v.lane === lane && !v.wreck).sort((a, b) => b.s - a.s)
+      let ahead = null
+      for (const vehicle of queue) {
+        const half = vehicle.type.spec.length / 2
+        let next = vehicle.s + lane.speed * delta
+        for (const stop of stops) {
+          if (vehicle.s < stop) next = Math.min(next, stop - half - STOP_GAP)
+        }
+        if (ahead) next = Math.min(next, ahead.s - ahead.type.spec.length / 2 - half - QUEUE_GAP)
+        vehicle.s = Math.max(vehicle.s, next) // never reverse
+        ahead = vehicle
+      }
+    }
+  }
 
   return {
     group,
+    // Blocks the lanes near `point` ({ x, z }, e.g. the demon) at its z, or null.
+    // The point is read every frame, so a moving one can be passed once.
+    setBlock(point) {
+      block = point
+    },
+    // A driving, on-screen vehicle within `radius` of `point` (x/z), or null.
+    findNear(point, radius) {
+      let best = null
+      let bestDistance = radius
+      for (const vehicle of vehicles) {
+        if (vehicle.wreck || vehicle.s < 0 || vehicle.s > length) continue
+        const distance = Math.hypot(vehicle.lane.x - point.x, zOf(vehicle) - point.z)
+        if (distance < bestDistance) {
+          best = vehicle
+          bestDistance = distance
+        }
+      }
+      return best
+    },
+    position(vehicle, out) {
+      return out.set(vehicle.lane.x, 0, zOf(vehicle))
+    },
+    // Throws a vehicle out of traffic: it tumbles with `velocity` and `spin`
+    // (radians/s per axis), calls onLand(position) on first impact, and comes to
+    // rest on its roof, charred. False if there are too many wrecks already.
+    wreck(vehicle, velocity, spinRates, onLand) {
+      if (vehicles.filter((v) => v.wreck).length >= MAX_WRECKS) return false
+      vehicle.wreck = {
+        position: new THREE.Vector3(vehicle.lane.x, 0.6, zOf(vehicle)),
+        quaternion: (vehicle.lane.dir > 0 ? forward : reversed).clone(),
+        velocity: velocity.clone(),
+        spin: spinRates.clone(),
+        landed: false,
+        settled: false,
+        rest: null,
+        onLand,
+      }
+      vehicle.type.body.setColorAt(vehicle.index, CHARRED)
+      vehicle.type.body.instanceColor.needsUpdate = true
+      return true
+    },
+    // Clears every wreck; their vehicles rejoin the back of their lanes.
+    clearWrecks() {
+      for (const vehicle of vehicles) {
+        if (!vehicle.wreck) continue
+        vehicle.wreck = null
+        const last = Math.min(...vehicles.filter((v) => v.lane === vehicle.lane && !v.wreck).map((v) => v.s), 0)
+        vehicle.s = last - spacing()
+        assignType(vehicle)
+      }
+    },
     // `viewer` (the camera position) decides which police car gets the real light.
     update(delta, viewer) {
       // Double flash: two red pulses, then two blue.
@@ -190,11 +337,15 @@ export function createTraffic({ lanes, minZ, maxZ }) {
       policeLight.intensity = 0
       let nearest = Infinity
 
+      drive(delta)
       for (const vehicle of vehicles) {
-        vehicle.s += vehicle.lane.speed * delta
+        if (vehicle.wreck) {
+          updateWreck(vehicle, delta)
+          continue
+        }
         if (vehicle.s > length) {
           // Re-queue behind the last vehicle in this lane, possibly as a different type.
-          const last = Math.min(...vehicles.filter((v) => v.lane === vehicle.lane).map((v) => v.s))
+          const last = Math.min(...vehicles.filter((v) => v.lane === vehicle.lane && !v.wreck).map((v) => v.s))
           vehicle.s = Math.min(0, last) - spacing()
           assignType(vehicle)
         }
@@ -202,7 +353,7 @@ export function createTraffic({ lanes, minZ, maxZ }) {
         if (vehicle.s < 0) {
           matrix.copy(hidden)
         } else {
-          const z = vehicle.lane.dir > 0 ? minZ + vehicle.s : maxZ - vehicle.s
+          const z = zOf(vehicle)
           position.set(vehicle.lane.x, 0, z)
           matrix.compose(position, vehicle.lane.dir > 0 ? forward : reversed, one)
           const distance = position.distanceToSquared(viewer)

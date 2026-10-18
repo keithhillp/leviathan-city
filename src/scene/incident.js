@@ -21,19 +21,54 @@ const BOB = 0.25
 
 const FIRE_RATE = 4 // shots per second per trooper while in a burst
 const BURST = [1, 0.6] // seconds firing, seconds pausing
-const TRACER_SPEED = 120
-const MAX_TRACERS = 40
+const LASER_SPEED = 140
+const MAX_LASERS = 60
+const TROOPER_LASER_LENGTH = 1.6
+// The hovercraft's chin guns: laser bursts from half way through its approach
+// and throughout the fight (only fight hits count, so the troopers finish it).
+const SHIP_FIRE_RATE = 5
+const SHIP_BURST = [1.2, 0.8]
+const SHIP_LASER_LENGTH = 3.5
+const SHIP_GUNS = [
+  [-1.6, -1.2, 7.5],
+  [1.6, -1.2, 7.5],
+]
+const SHIP_DAMAGE = 1
+// The demon stalks the street (within location.roam), often heading for a
+// vehicle to wreck; the craft follows it during the fight.
+const ROAM_SPEED = 3.5
+const ROAM_EVERY = [2.5, 5] // seconds before picking somewhere new
+const ROAM_VEHICLE_CHANCE = 0.5
+const ROAM_SEARCH = 25 // how far it looks for a vehicle to head for
+const FOLLOW_RATE = 0.8 // per second, how closely the craft tracks the demon
+const ROAD_HALF_WIDTH = 13 // troopers stay on the road
 
 const DEMON_EYES = new THREE.Color(6, 1.6, 0.2)
 const DEMON_GLOW = 60
 const PORTAL = new THREE.Color(3, 0.15, 0.05)
 const VISOR = new THREE.Color(0.6, 2.4, 3)
-const TRACER = new THREE.Color(4, 5, 6)
+const TROOPER_LASER = new THREE.Color(1.5, 4.5, 6) // cyan
+const SHIP_LASER = new THREE.Color(6, 1.2, 0.4) // red-orange
 const ENGINE = new THREE.Color(1.2, 2.4, 4)
 const BEAM = new THREE.Color(0.9, 0.95, 1)
 const TRACTOR = new THREE.Color(0.2, 0.9, 1)
 const SEARCHLIGHT = 900
 const MUZZLE_LIGHT = 40
+
+// Carnage: the demon flings traffic. A ground slam when it surfaces, then it
+// grabs a vehicle within reach every so often; wrecks explode on impact.
+const SLAM_RADIUS = 14
+const SLAM_VEHICLES = 3
+const GRAB_EVERY = [2, 3.5] // seconds
+const GRAB_REACH = 10
+const THROW_SPEED = [8, 14] // sideways, away from the demon
+const THROW_LIFT = [12, 18] // upwards
+const THROW_SPIN = 6 // radians per second, per axis at most
+const BLAST_LIGHT = 500
+const BLAST_TIME = 0.6
+const EXPLOSION = new THREE.Color(4, 1.6, 0.4)
+const CLEANUP_DELAY = 6 // seconds after the craft leaves before the road is cleared
+const SHAKE_DECAY = 2 // per second
 
 // Where troopers stand during the fight, relative to the demon (x, z).
 const FORMATION = [
@@ -130,7 +165,7 @@ function createTrooper() {
     new THREE.Mesh(box(0.28, 0.07, 0.05, 0, 1.94, 0.19), new THREE.MeshBasicMaterial({ color: VISOR })),
     new THREE.Mesh(box(0.09, 0.12, 0.95, 0.18, 1.35, 0.45), armour), // rifle
   )
-  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), new THREE.MeshBasicMaterial({ color: TRACER }))
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), new THREE.MeshBasicMaterial({ color: TROOPER_LASER }))
   flash.position.set(0.18, 1.35, 1)
   flash.visible = false
   group.add(flash)
@@ -205,7 +240,7 @@ function createCraft() {
   return { group, engines, navRed, navGreen, doors, searchlight, beam, tractor }
 }
 
-export function createIncident({ fires, location }) {
+export function createIncident({ fires, traffic, location }) {
   const group = new THREE.Group()
   const demon = createDemon()
   const craft = createCraft()
@@ -218,14 +253,21 @@ export function createIncident({ fires, location }) {
   }
   const portal = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.6, 32).rotateX(-Math.PI / 2), additive(PORTAL))
   portal.visible = false
-  const tracers = Array.from({ length: MAX_TRACERS }, () => {
-    const mesh = new THREE.Mesh(box(0.06, 0.06, 1), new THREE.MeshBasicMaterial({ color: TRACER }))
+  const lasers = Array.from({ length: MAX_LASERS }, () => {
+    const mesh = new THREE.Mesh(box(0.06, 0.06, 1), new THREE.MeshBasicMaterial({ color: TROOPER_LASER }))
     mesh.visible = false
     group.add(mesh)
-    return { mesh, target: new THREE.Vector3() }
+    return { mesh, target: new THREE.Vector3(), damage: 1 }
   })
   const muzzleLight = new THREE.PointLight(0xcfe6ff, 0, 15, 2)
-  group.add(demon.group, craft.group, portal, muzzleLight)
+  const blastLight = new THREE.PointLight(0xff8a3a, 0, 45, 2)
+  const explosions = Array.from({ length: 4 }, () => {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), additive(EXPLOSION))
+    mesh.visible = false
+    group.add(mesh)
+    return { mesh, age: Infinity }
+  })
+  group.add(demon.group, craft.group, portal, muzzleLight, blastLight)
 
   let phase = 'idle'
   let phaseTime = 0
@@ -234,7 +276,16 @@ export function createIncident({ fires, location }) {
   let hitFlash = 0
   let lungeTime = 0
   let liftTime = 0
-  const site = new THREE.Vector3() // where the demon stands
+  let grabTimer = 0
+  let grabAnim = 0 // >0 while the demon's arms swing at a vehicle
+  let cleanup = 0 // counts down to clearing the wrecks after an incident
+  let shake = 0 // 0..1 camera shake from explosions
+  const site = new THREE.Vector3() // where the demon rose (the portal)
+  const base = new THREE.Vector3() // where the demon is now, on the ground
+  const roamTarget = new THREE.Vector3()
+  let roamTimer = 0
+  let gunTimer = 0
+  let gunIndex = 0
   const hover = new THREE.Vector3() // where the craft hovers
   const from = new THREE.Vector3()
   const to = new THREE.Vector3()
@@ -248,6 +299,9 @@ export function createIncident({ fires, location }) {
 
   function start() {
     site.set(location.x, 0, random(location.z))
+    base.copy(site)
+    roamTarget.copy(site)
+    roamTimer = 0
     hover.set(site.x, location.hoverHeight, site.z)
     health = DEMON_HEALTH
     demon.group.position.set(site.x, -5, site.z)
@@ -258,7 +312,57 @@ export function createIncident({ fires, location }) {
     portal.position.set(site.x, 0.3, site.z)
     portal.visible = true
     fires.ignite(scratch.set(site.x, 0, site.z), new THREE.Vector3(0, 0, 1))
+    traffic.setBlock(base)
+    cleanup = 0
+    grabTimer = random(GRAB_EVERY)
     setPhase('summon')
+  }
+
+  // Fireball, blast of light, camera shake and a fire left burning.
+  function explode(position) {
+    const explosion = explosions.reduce((oldest, e) => (e.age > oldest.age ? e : oldest))
+    explosion.age = 0
+    explosion.mesh.position.copy(position).setY(1)
+    explosion.mesh.visible = true
+    blastLight.position.copy(position).setY(3)
+    blastLight.intensity = BLAST_LIGHT
+    shake = Math.min(1, shake + 0.8)
+    fires.ignite(position.clone().setY(0), new THREE.Vector3(0, 0, 1))
+  }
+
+  // Hurls a vehicle away from `from`, spinning; it explodes where it lands.
+  function fling(vehicle, from) {
+    const away = traffic.position(vehicle, new THREE.Vector3()).sub(from).setY(0)
+    if (away.lengthSq() < 0.01) away.set(1, 0, 0)
+    const velocity = away.normalize().multiplyScalar(random(THROW_SPEED)).setY(random(THROW_LIFT))
+    const spin = new THREE.Vector3(
+      (Math.random() - 0.5) * 2 * THROW_SPIN,
+      (Math.random() - 0.5) * THROW_SPIN,
+      (Math.random() - 0.5) * 2 * THROW_SPIN,
+    )
+    return traffic.wreck(vehicle, velocity, spin, explode)
+  }
+
+  // Ground slam as it surfaces: throws the nearest few vehicles.
+  function slam() {
+    shake = 1
+    for (let i = 0; i < SLAM_VEHICLES; i++) {
+      const vehicle = traffic.findNear(site, SLAM_RADIUS)
+      if (!vehicle || !fling(vehicle, site)) break
+    }
+  }
+
+  function updateExplosions(delta) {
+    for (const explosion of explosions) {
+      if (!explosion.mesh.visible) continue
+      explosion.age += delta
+      const t = explosion.age / BLAST_TIME
+      explosion.mesh.scale.setScalar(0.5 + t * 5)
+      explosion.mesh.material.opacity = Math.max(0, 1 - t)
+      if (t >= 1) explosion.mesh.visible = false
+    }
+    blastLight.intensity = Math.max(0, blastLight.intensity - delta * BLAST_LIGHT * 3)
+    shake = Math.max(0, shake - delta * SHAKE_DECAY)
   }
 
   // Craft world position of a rope point (local x, z under the belly).
@@ -289,45 +393,86 @@ export function createIncident({ fires, location }) {
     return !moving
   }
 
-  function shoot(trooper) {
-    const tracer = tracers.find((t) => !t.mesh.visible)
-    if (!tracer) return
-    trooper.group.localToWorld(tracer.mesh.position.set(0.18, 1.35, 1))
+  // A laser bolt from `origin` at the demon's chest (scattered a little).
+  function fireLaser(origin, colour, length, damage) {
+    const laser = lasers.find((l) => !l.mesh.visible)
+    if (!laser) return
+    laser.mesh.position.copy(origin)
     demon.group.localToWorld(chest.set(0, 2.6, 0))
-    tracer.target.copy(chest).add(scratch.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(1.2))
-    tracer.mesh.lookAt(tracer.target)
-    tracer.mesh.visible = true
-    trooper.flashTime = 0.05
-    muzzleLight.position.copy(tracer.mesh.position)
+    laser.target.copy(chest).add(scratch.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(1.2))
+    laser.mesh.lookAt(laser.target)
+    laser.mesh.scale.set(1, 1, length)
+    laser.mesh.material.color.copy(colour)
+    laser.mesh.visible = true
+    laser.damage = damage
+    muzzleLight.position.copy(origin)
+    muzzleLight.color.copy(colour).multiplyScalar(0.2)
     muzzleLight.intensity = MUZZLE_LIGHT
   }
 
-  function updateTracers(delta) {
-    for (const tracer of tracers) {
-      if (!tracer.mesh.visible) continue
-      scratch.subVectors(tracer.target, tracer.mesh.position)
-      const step = TRACER_SPEED * delta
+  function shoot(trooper) {
+    fireLaser(trooper.group.localToWorld(scratch.set(0.18, 1.35, 1)).clone(), TROOPER_LASER, TROOPER_LASER_LENGTH, 1)
+    trooper.flashTime = 0.05
+  }
+
+  // The craft's chin guns, alternating, in bursts.
+  function updateGuns(delta, elapsed) {
+    const firing = (phase === 'approach' && phaseTime > FLIGHT_TIME * 0.5) || phase === 'fight'
+    if (!firing || elapsed % (SHIP_BURST[0] + SHIP_BURST[1]) > SHIP_BURST[0]) return
+    if ((gunTimer -= delta) > 0) return
+    gunTimer = 1 / SHIP_FIRE_RATE
+    const [x, y, z] = SHIP_GUNS[gunIndex++ % SHIP_GUNS.length]
+    fireLaser(craft.group.localToWorld(new THREE.Vector3(x, y, z)), SHIP_LASER, SHIP_LASER_LENGTH, SHIP_DAMAGE)
+  }
+
+  function updateLasers(delta) {
+    for (const laser of lasers) {
+      if (!laser.mesh.visible) continue
+      scratch.subVectors(laser.target, laser.mesh.position)
+      const step = LASER_SPEED * delta
       if (scratch.length() <= step) {
-        tracer.mesh.visible = false
-        if (phase === 'fight') {
-          health--
-          hitFlash = 0.06
-        }
+        laser.mesh.visible = false
+        const alive = ['approach', 'deploy', 'fight'].includes(phase)
+        if (alive) hitFlash = 0.06
+        if (phase === 'fight') health -= laser.damage
       } else {
-        tracer.mesh.position.addScaledVector(scratch.normalize(), step)
+        laser.mesh.position.addScaledVector(scratch.normalize(), step)
       }
     }
   }
 
+  // Stalks towards somewhere new every few seconds, often a vehicle to wreck.
+  // Returns true while walking.
+  function roam(delta) {
+    if ((roamTimer -= delta) <= 0 || base.distanceTo(roamTarget) < 0.5) {
+      roamTimer = random(ROAM_EVERY)
+      const vehicle = Math.random() < ROAM_VEHICLE_CHANCE && traffic.findNear(base, ROAM_SEARCH)
+      if (vehicle) traffic.position(vehicle, roamTarget)
+      else roamTarget.set(random(location.roam.x), 0, random(location.roam.z))
+      roamTarget.x = THREE.MathUtils.clamp(roamTarget.x, ...location.roam.x)
+      roamTarget.z = THREE.MathUtils.clamp(roamTarget.z, ...location.roam.z)
+    }
+    scratch.subVectors(roamTarget, base).setY(0)
+    const distance = scratch.length()
+    if (distance < 0.5) return false
+    base.addScaledVector(scratch.normalize(), Math.min(distance, ROAM_SPEED * delta))
+    return true
+  }
+
   function updateCraft(delta, elapsed) {
     const g = craft.group
+    // Track the demon in flight and the fight; hold still to deploy and board.
+    if (['approach', 'fight', 'dying', 'secure'].includes(phase)) {
+      const blend = phase === 'approach' ? 1 : Math.min(1, delta * FOLLOW_RATE)
+      hover.lerp(scratch.set(base.x, location.hoverHeight, base.z), blend)
+    }
     if (phase === 'approach') {
       const t = ease(clamp01(phaseTime / FLIGHT_TIME))
       g.position.lerpVectors(from, hover, t)
       face(g, hover, delta, 2)
     } else if (phase === 'depart') {
       const t = ease(clamp01((phaseTime - DOOR_TIME) / FLIGHT_TIME))
-      g.position.lerpVectors(hover, to, t)
+      g.position.lerpVectors(from, to, t)
       if (t > 0) face(g, to, delta, 2)
       if (t >= 1) g.visible = false
     } else if (g.visible) {
@@ -378,16 +523,34 @@ export function createIncident({ fires, location }) {
       const nearest = troopers.filter((t) => t.group.visible).sort(
         (a, b) => a.group.position.distanceTo(d.position) - b.group.position.distanceTo(d.position),
       )[0]
-      face(d, nearest ? nearest.group.position : scratch.set(site.x, 0, site.z + 10), delta, 2)
+      const walking = phase !== 'summon' && grabAnim <= 0 && roam(delta)
+      if (walking) face(d, roamTarget, delta, 3)
+      else face(d, nearest ? nearest.group.position : scratch.set(base.x, 0, base.z + 10), delta, 2)
+      traffic.setBlock(base)
       demon.light.intensity = DEMON_GLOW * (0.8 + Math.sin(elapsed * 9) * 0.2)
-      // Lunge at the nearest trooper every so often during the fight.
-      let lunge = 0
-      if (phase === 'fight' && nearest) {
+      // Grab a passing vehicle every so often and fling it.
+      if (['approach', 'deploy', 'fight'].includes(phase) && (grabTimer -= delta) <= 0) {
+        grabTimer = random(GRAB_EVERY)
+        const vehicle = traffic.findNear(d.position, GRAB_REACH)
+        if (vehicle) {
+          face(d, traffic.position(vehicle, scratch), 1, 1) // snap round to it
+          if (fling(vehicle, d.position)) grabAnim = 0.5
+        }
+      }
+      grabAnim -= delta
+      // Arms swing at a grabbed vehicle, or lunge at the nearest trooper every
+      // so often during the fight.
+      let lunge = grabAnim > 0 ? Math.sin((grabAnim / 0.5) * Math.PI) : 0
+      if (phase === 'fight' && nearest && grabAnim <= 0) {
         lungeTime += delta
         const cycle = lungeTime % LUNGE_EVERY
         lunge = cycle < 0.4 ? cycle / 0.4 : cycle < 1 ? 1 - (cycle - 0.4) / 0.6 : 0
-        scratch.subVectors(nearest.group.position, site).setY(0).normalize()
-        d.position.set(site.x, d.position.y, site.z).addScaledVector(scratch, lunge * 2)
+        scratch.subVectors(nearest.group.position, base).setY(0).normalize()
+      }
+      if (phase !== 'summon') {
+        // Heavy steps while walking, plus any lunge.
+        d.position.set(base.x, walking ? Math.abs(Math.sin(elapsed * 5)) * 0.15 : 0, base.z)
+        if (phase === 'fight' && nearest && grabAnim <= 0) d.position.addScaledVector(scratch, lunge * 2)
       }
       for (const arm of demon.arms) arm.rotation.x = -0.3 - lunge * 1.4 + Math.sin(elapsed * 2) * 0.1
     }
@@ -402,6 +565,12 @@ export function createIncident({ fires, location }) {
     demon.skin.emissive.setRGB(hitFlash > 0 ? 1.5 : 0.19, hitFlash > 0 ? 1.4 : 0, hitFlash > 0 ? 1.3 : 0)
     portal.material.opacity = alive ? 0.7 + Math.sin(elapsed * 6) * 0.3 : Math.max(0, portal.material.opacity - delta)
     portal.visible = portal.material.opacity > 0
+  }
+
+  // A trooper's place around the demon, kept on the road.
+  function formationSpot(index, out) {
+    const [x, z] = FORMATION[index]
+    return out.set(THREE.MathUtils.clamp(base.x + x, -ROAD_HALF_WIDTH, ROAD_HALF_WIDTH), 0, base.z + z)
   }
 
   function updateTroopers(delta, elapsed) {
@@ -426,7 +595,7 @@ export function createIncident({ fires, location }) {
           trooper.rope.visible = false
           if (trooper.state === 'descending') {
             trooper.state = 'walking'
-            trooper.target.set(site.x + FORMATION[i][0], 0, site.z + FORMATION[i][1])
+            formationSpot(i, trooper.target)
           } else {
             trooper.state = 'aboard'
             g.visible = false
@@ -438,6 +607,7 @@ export function createIncident({ fires, location }) {
           trooper.ropeTime = -i * ROPE_STAGGER
         }
       } else if (trooper.state === 'fighting') {
+        formationSpot(i, trooper.target) // keep up as the demon moves
         walk(trooper, delta, elapsed)
         demon.group.localToWorld(chest.set(0, 2.6, 0))
         face(g, chest, delta)
@@ -465,6 +635,10 @@ export function createIncident({ fires, location }) {
       quaternion.copy(trooper.group.quaternion).multiply(HELMET_VIEW)
       return true
     },
+    // 0..1 camera shake from explosions.
+    get shake() {
+      return shake
+    },
     // Starts an incident now, if one isn't already running.
     trigger() {
       if (phase === 'idle') start()
@@ -472,11 +646,18 @@ export function createIncident({ fires, location }) {
     update(delta, elapsed) {
       phaseTime += delta
       if (phase === 'idle') {
+        // Clear the wrecks and reopen the road a while after the craft leaves.
+        if (cleanup > 0 && (cleanup -= delta) <= 0) {
+          traffic.clearWrecks()
+          traffic.setBlock(null)
+        }
+        updateExplosions(delta)
         if ((wait -= delta) <= 0) start()
         return
       }
 
       if (phase === 'summon' && phaseTime >= SUMMON_TIME) {
+        slam()
         from.set(site.x - 30, 130, site.z - 60) // drops in from the sky, clear of the tower
         craft.group.position.copy(from)
         craft.group.rotation.set(0, 0, 0)
@@ -500,7 +681,7 @@ export function createIncident({ fires, location }) {
         troopers.forEach((trooper, i) => {
           trooper.state = 'gathering'
           const angle = (i / troopers.length) * Math.PI * 2
-          trooper.target.set(site.x + Math.sin(angle) * 2.2, 0, site.z + 1.5 + Math.cos(angle) * 2.2)
+          trooper.target.set(base.x + Math.sin(angle) * 2.2, 0, base.z + 1.5 + Math.cos(angle) * 2.2)
         })
         liftTime = 0
         setPhase('secure')
@@ -512,8 +693,8 @@ export function createIncident({ fires, location }) {
           const t = clamp01((liftTime - 1) / LIFT_TIME)
           craft.tractor.visible = t > 0 && t < 1
           if (t > 0) {
-            const belly = craft.group.localToWorld(scratch.set(0, -1.3, 0))
-            demon.group.position.lerpVectors(new THREE.Vector3(site.x, 0, site.z), belly, ease(t))
+            const belly = craft.group.localToWorld(new THREE.Vector3(0, -1.3, 0))
+            demon.group.position.lerpVectors(scratch.set(base.x, 0, base.z), belly, ease(t))
             demon.group.scale.setScalar(1 - ease(t) * 0.6)
             craft.tractor.scale.setScalar(Math.max(0.01, belly.y - demon.group.position.y))
           }
@@ -527,18 +708,22 @@ export function createIncident({ fires, location }) {
           }
         }
       } else if (phase === 'board' && troopers.every((t) => t.state === 'aboard')) {
+        from.copy(craft.group.position)
         to.set(hover.x + 40, 140, hover.z - 40) // climbs away over the rooftops
         setPhase('depart')
       } else if (phase === 'depart' && phaseTime >= DOOR_TIME + FLIGHT_TIME) {
         craft.group.visible = false
         wait = random(INTERVAL)
+        cleanup = CLEANUP_DELAY
         setPhase('idle')
       }
 
       updateDemon(delta, elapsed)
       updateCraft(delta, elapsed)
       updateTroopers(delta, elapsed)
-      updateTracers(delta)
+      updateGuns(delta, elapsed)
+      updateLasers(delta)
+      updateExplosions(delta)
       muzzleLight.intensity = Math.max(0, muzzleLight.intensity - delta * MUZZLE_LIGHT * 15)
     },
   }

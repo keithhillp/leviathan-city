@@ -35,6 +35,7 @@ const FOV = 50
 const PORTRAIT_FOV = 85
 const SWAY = 0.25 // a slow handheld drift so the fixed view doesn't feel frozen
 const COORDS_INTERVAL = 0.1 // seconds between coordinate readout updates
+const SHAKE = 0.6 // camera shake at full strength (units)
 
 // Which CCTV camera is live: C cycles, 1-9 jump straight to one.
 const cameraIndex = ref(0)
@@ -158,7 +159,7 @@ onMounted(() => {
   eyebots = createEyebots({ patrol: PATROL, fires })
   scene.add(eyebots.group, fires.group)
 
-  incident = createIncident({ fires, location: INCIDENT })
+  incident = createIncident({ fires, traffic, location: INCIDENT })
   scene.add(incident.group)
   helmetFeeds = createHelmetFeeds({ renderer, scene, incident, screens: square.feedScreens })
 
@@ -242,6 +243,13 @@ onMounted(() => {
         position.z,
       )
       camera.lookAt(target)
+    }
+    // Explosions shake whichever camera is live (not the free camera).
+    if (incident.shake > 0 && !freeCam.value) {
+      const amount = incident.shake * SHAKE
+      camera.position.x += (Math.random() - 0.5) * amount
+      camera.position.y += (Math.random() - 0.5) * amount
+      camera.position.z += (Math.random() - 0.5) * amount
     }
     wetness.update(camera)
     composer.render()

@@ -194,10 +194,11 @@ function patrolWindows() {
 
 export const PATROL = { windows: patrolWindows() }
 
-// Street incidents (demon, hovercraft, troopers): on the reservation (x = 0,
-// clear of traffic) a little in front of the rail bridge, in view of the
-// cameras; the craft hovers above it, clear of the bridge and the train.
-export const INCIDENT = { x: 0, z: [-2, 8], hoverHeight: 18 }
+// Street incidents (demon, hovercraft, troopers): the demon rises on the
+// reservation a little in front of the rail bridge, in view of the cameras,
+// then roams the road within `roam` (clear of the buildings, pavements and the
+// bridge's pillars). The craft hovers above it, clear of the bridge and train.
+export const INCIDENT = { x: 0, z: [-2, 8], hoverHeight: 18, roam: { x: [-12, 12], z: [-3, 30] } }
 
 // Faint coloured spill from the larger adverts: [position, index into SCREENS].
 const SPILL_LIGHTS = [

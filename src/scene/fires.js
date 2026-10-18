@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-const MAX_FIRES = 4 // at most this many burning at once; the oldest is reused
+const MAX_FIRES = 6 // at most this many burning at once; the oldest is reused
 const BURN_TIME = 10 // seconds, the last FADE_TIME of which it dies down
 const FADE_TIME = 2.5
 const FLAMES = 7
