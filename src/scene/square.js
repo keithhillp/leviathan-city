@@ -4,6 +4,7 @@ import { Screen } from './screens.js'
 import { Visualiser } from './visualiser.js'
 import { AdsContent, DeadContent, TickerContent } from './screenContent.js'
 import billboards from '../content/billboards.json'
+import { HUB, PITCH, RINGS, STREET } from './plan.js'
 
 // A Times Square style plaza along the avenue at x = 0: the camera stands at
 // the open end looking at a tower carrying the big visualiser screen, with
@@ -22,6 +23,11 @@ export const CAMERAS = [
     target: new THREE.Vector3(-13.18, 37.95, -47.34),
   },
   {
+    name: 'CENTRAL RESERVATION',
+    position: new THREE.Vector3(0.02, 3.08, 47.49),
+    target: new THREE.Vector3(-0.17, 5.43, 38.08),
+  },
+  {
     name: 'PLAZA OVERWATCH',
     position: new THREE.Vector3(-12.06, 22.97, 27.73),
     target: new THREE.Vector3(4.16, 9.21, -62.46),
@@ -36,10 +42,31 @@ export const CAMERAS = [
     position: new THREE.Vector3(2.26, 48.82, 101.03),
     target: new THREE.Vector3(6.0, 22.51, -54.6),
   },
+  // Leviathan Labs' tower at the hub, where the avenues lead.
+  {
+    name: 'AVENUE ZERO', // on the south avenue's pavement, under the radial skyway
+    position: new THREE.Vector3(-11, 2.5, HUB.z + 440),
+    target: new THREE.Vector3(0, 330, HUB.z),
+  },
+  {
+    name: 'RING ROAD', // on the highway deck behind the square
+    position: new THREE.Vector3(40, 25.5, HUB.z + 512),
+    target: new THREE.Vector3(0, 420, HUB.z),
+  },
+  {
+    name: 'LEVIATHAN CROWN', // up level with the Eye
+    position: new THREE.Vector3(230, 700, HUB.z + 220),
+    target: new THREE.Vector3(0, 840, HUB.z),
+  },
   // First-person feed from an eyebot (`bot` picks which one), with a wider lens.
   { name: 'EYEBOT LIVE FEED', follow: 'eyebot', bot: 0, fov: 70 },
   // A trooper's helmet cam during street incidents (no signal otherwise).
-  { name: 'TROOPER HELMET CAM', follow: 'trooper', trooper: 0, fov: 75 },
+  { name: 'TROOPER HELMET CAM', follow: 'trooper', trooper: 0, fov: 75, offline: 'HELMET CAM OFFLINE' },
+  // Riding a car wherever it goes (N switches to another nearby).
+  { name: 'CAR CHASE CAM', follow: 'car', view: 'chase', fov: 60 },
+  { name: 'DASH CAM', follow: 'car', view: 'dash', fov: 75 },
+  // The train's cab, while it's out on the bridge; selecting it calls trains in.
+  { name: 'TRAIN CAB CAM', follow: 'train', fov: 70, offline: 'TRAIN IN TUNNEL' },
 ]
 
 // Traffic runs down the plaza between a tunnel in the tower's base and the
@@ -102,6 +129,26 @@ export const SQUARE = {
     { name: 'endL', x0: -38, x1: -30, z0: -93, z1: -75, floors: 11 },
     { name: 'endR', x0: 30, x1: 38, z0: -93, z1: -75, floors: 9 },
   ],
+}
+
+// The square as a stamp for the city plan (plan.js): its footprint, buildings,
+// avenue and rail bridge. The footprint takes in the block in front of the
+// plaza too, where the cameras stand. The avenue runs through it (and the
+// tower's tunnel) from the street under the ring highway behind the tower to
+// the street in front.
+export const STAMP = {
+  id: 'hero',
+  bounds: { ...SQUARE.bounds, z1: 2 * PITCH - STREET / 2 },
+  buildings: SQUARE.buildings,
+  roads: [
+    {
+      a: [0, HUB.z + RINGS.highway],
+      b: [0, 2 * PITCH],
+      kind: 'avenue',
+      width: ROAD_OUTER * 2,
+    },
+  ],
+  rail: [{ a: [-BRIDGE.span / 2, BRIDGE.z], b: [BRIDGE.span / 2, BRIDGE.z], kind: 'rail', y: BRIDGE.deckY }],
 }
 
 // As wide as the plaza allows (the side buildings would hide anything wider)

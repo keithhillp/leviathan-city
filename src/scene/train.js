@@ -91,8 +91,26 @@ export function createTrain({ deckY, tracks, clipX }) {
   let direction = 1
   let trackIndex = 0
 
+  // Cab camera: inside the front car near its nose, looking down the line.
+  const cab = new THREE.Vector3(CARS_LENGTH / 2 - 1, BODY.clearance + 2.3, 0)
+  const lookForward = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2)
+
   return {
     group,
+    // Sends the next train now, if one isn't already passing.
+    trigger() {
+      if (wait > 0) wait = Math.min(wait, 0.01)
+    },
+    // The driver's view while the cab is out on the bridge; false otherwise
+    // (between trains, or inside the buildings at either end).
+    viewpoint(position, quaternion) {
+      if (wait > 0) return false
+      train.updateMatrixWorld()
+      train.localToWorld(position.copy(cab))
+      if (Math.abs(position.x) > clipX - 1) return false
+      quaternion.copy(train.quaternion).multiply(lookForward)
+      return true
+    },
     update(delta) {
       if (wait > 0) {
         wait -= delta

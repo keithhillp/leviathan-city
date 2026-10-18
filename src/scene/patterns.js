@@ -28,9 +28,12 @@ function rippleOrigin(rng, { heroCenter, signCenter, wallX }) {
 // [1 / wavelength, -, -]; stripes: direction / wavelength; implode: [radius].
 const diagonal = new THREE.Vector3(1, 0, 1).normalize()
 function library(places) {
-  const { heroCenter } = places
+  const { heroCenter, leviathan } = places
   const plaza = new THREE.Vector3(0, 20, -10)
   return [
+    // Out across the whole city from Leviathan Labs' tower.
+    ['leviathan pulse', ripple, leviathan, [0, 0, 0], 420],
+    ['leviathan rings', rings, leviathan, [1 / 160, 0, 0], 1.2],
     ['tower sweep', sweep, heroCenter, [0, 0, 1], 90],
     ['reverse sweep', sweep, new THREE.Vector3(0, 0, 70), [0, 0, -1], 90],
     ['left to right', sweep, new THREE.Vector3(-40, 0, 0), [1, 0, 0], 50],

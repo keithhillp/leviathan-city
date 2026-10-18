@@ -94,25 +94,39 @@ export class AudioField {
   // Injects audioGain() into a built-in material. `apply` is a GLSL statement
   // inserted after the `after` chunk of the fragment shader; `vertexApply`
   // runs at the end of the vertex shader, e.g. to pass attributes through.
+  // Chains onto any patch already on the material, so others can stack on it.
   patch(
     material,
     { after, apply, uniforms = {}, declarations = '', vertexDeclarations = '', vertexApply = '' },
   ) {
-    material.onBeforeCompile = (shader) => {
+    const previous = material.onBeforeCompile
+    // Taken before replacing onBeforeCompile, since the default key is its source.
+    const baseKey = material.customProgramCacheKey()
+    material.onBeforeCompile = (shader, renderer) => {
+      previous.call(material, shader, renderer)
       Object.assign(shader.uniforms, this.uniforms, uniforms)
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>\nvarying vec3 vAudioWorld;\n${vertexDeclarations}`)
-        .replace(
-          '#include <project_vertex>',
-          `#include <project_vertex>\nvAudioWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;\n${vertexApply}`,
-        )
+        .replace('#include <project_vertex>', `#include <project_vertex>\n${WORLD_GLSL}\n${vertexApply}`)
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>\n${GAIN_GLSL}\n${declarations}`)
         .replace(after, `${after}\n${apply}`)
     }
-    material.customProgramCacheKey = () => `audio:${after}:${apply}:${vertexApply}`
+    material.customProgramCacheKey = () => `${baseKey}|audio:${after}:${apply}:${vertexApply}`
   }
 }
+
+// World position for the patterns, including the per-instance transform of
+// InstancedMesh and BatchedMesh (as project_vertex applies it).
+const WORLD_GLSL = /* glsl */ `
+vec4 audioWorld = vec4(transformed, 1.0);
+#ifdef USE_BATCHING
+  audioWorld = batchingMatrix * audioWorld;
+#endif
+#ifdef USE_INSTANCING
+  audioWorld = instanceMatrix * audioWorld;
+#endif
+vAudioWorld = (modelMatrix * audioWorld).xyz;`
 
 const GAIN_GLSL = /* glsl */ `
 uniform sampler2D uAudioHistory;
@@ -182,6 +196,16 @@ float audioColumn(float column) {
 
 float audioLevel(float band) {
   return audioColumn(band * ${(BANDS - 1).toFixed(1)});
+}
+
+// A band's level \`delay\` (0..1 of the history) ago, for shapes of one's own
+// rather than the current pattern's.
+float audioLevelAt(float band, float delay) {
+  vec2 uv = vec2(
+    (band * ${(BANDS - 1).toFixed(1)} + 0.5) / ${COLUMNS.toFixed(1)},
+    clamp(delay, 0.0, 1.0) * ${(HISTORY - 1) / HISTORY} + ${0.5 / HISTORY}
+  );
+  return texture2D(uAudioHistory, uv).r;
 }
 
 // 0..1, how quiet the passage was when the sound reached this point.

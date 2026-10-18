@@ -80,36 +80,49 @@ function patchSnap(material, uniforms) {
   material.customProgramCacheKey = () => `${baseKey}|ps1`
 }
 
-// Applies the geometry and texture side of the PS1 look to everything already
-// in the scene: vertex snapping, and hard nearest-texel sampling on colour
-// textures. Call once after the scene is built.
+// Applies the geometry and texture side of the PS1 look: vertex snapping, and
+// hard nearest-texel sampling on colour textures. Call once after the scene is
+// built; anything added later goes through add() (an object, or materials).
+// Materials only need adding once, however many meshes later share them.
 export function applyPS1(scene) {
   const uniforms = {
     uPS1Grid: { value: new THREE.Vector2(PIXEL_HEIGHT * (16 / 9), PIXEL_HEIGHT) },
     uPS1Snap: { value: 1 },
   }
-  const patched = new Set()
+  const patched = new WeakSet()
   const textures = new Map() // texture -> its original [magFilter, minFilter]
-  scene.traverse((object) => {
-    for (const material of [object.material].flat().filter(Boolean)) {
-      if (patched.has(material)) continue
-      patched.add(material)
-      patchSnap(material, uniforms)
-      for (const key of ['map', 'emissiveMap']) {
-        const texture = material[key]
-        if (texture && !textures.has(texture)) textures.set(texture, [texture.magFilter, texture.minFilter])
-      }
+  let enabled = true
+
+  const filter = (texture, [mag, min]) => {
+    texture.magFilter = enabled ? THREE.NearestFilter : mag
+    texture.minFilter = enabled ? THREE.NearestMipmapNearestFilter : min
+    texture.needsUpdate = true
+  }
+
+  const addMaterial = (material) => {
+    if (patched.has(material)) return
+    patched.add(material)
+    patchSnap(material, uniforms)
+    for (const key of ['map', 'emissiveMap']) {
+      const texture = material[key]
+      if (!texture || textures.has(texture)) continue
+      const original = [texture.magFilter, texture.minFilter]
+      textures.set(texture, original)
+      if (enabled) filter(texture, original)
     }
-  })
+  }
+  const add = (target) => {
+    if (Array.isArray(target)) target.forEach(addMaterial)
+    else target.traverse((object) => [object.material].flat().filter(Boolean).forEach(addMaterial))
+  }
+  add(scene)
 
   return {
+    add,
     setEnabled(on) {
+      enabled = on
       uniforms.uPS1Snap.value = on ? 1 : 0
-      for (const [texture, [mag, min]] of textures) {
-        texture.magFilter = on ? THREE.NearestFilter : mag
-        texture.minFilter = on ? THREE.NearestMipmapNearestFilter : min
-        texture.needsUpdate = true
-      }
+      for (const [texture, original] of textures) filter(texture, original)
     },
     setAspect(aspect) {
       uniforms.uPS1Grid.value.set(Math.floor(PIXEL_HEIGHT * aspect), PIXEL_HEIGHT)

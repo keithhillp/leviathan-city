@@ -1,5 +1,4 @@
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { BANDS } from './audioField.js'
 import billboards from '../content/billboards.json'
 
@@ -126,16 +125,16 @@ function faceFrame(face, x, z, w, d) {
   }
 }
 
-// Collects sign quads for the whole city, then merges them into one mesh.
-export class SignBuilder {
-  constructor(rng, maxAnisotropy) {
-    this.rng = rng
-    this.atlas = createAtlas(rng, maxAnisotropy)
-    this.quads = []
+// Places neon signs on buildings, given where each sign sits in the atlas
+// (`rects`: { horizontal, vertical }). No DOM, so it also runs in the chunk
+// worker.
+export class SignLayout {
+  constructor(rects) {
+    this.atlas = rects
     this.matrix = new THREE.Matrix4()
   }
 
-  quad(w, h, rect, angle, x, y, z, sign) {
+  quad(quads, w, h, rect, angle, x, y, z, sign) {
     const geometry = new THREE.PlaneGeometry(w, h)
     const uv = geometry.attributes.uv
     for (let i = 0; i < uv.count; i++) {
@@ -149,23 +148,17 @@ export class SignBuilder {
     const data = new Float32Array(uv.count * 2)
     for (let i = 0; i < uv.count; i++) data.set(sign, i * 2)
     geometry.setAttribute('aSign', new THREE.BufferAttribute(data, 2))
-    this.quads.push(geometry)
+    quads.push(geometry)
   }
 
-  // [band 0..1, seed 0..1]; the seed picks broken, flickering signs.
-  randomSign() {
-    return [Math.floor(this.rng() * BANDS) / (BANDS - 1), this.rng()]
-  }
-
-  pick(list) {
-    return list[Math.floor(this.rng() * list.length)]
-  }
-
-  // Decorates one building. `faces` are the sides that front a street;
-  // `structure` collects plain geometry for frames and legs.
-  decorate({ x, z, w, d, height, faces }, structure, floorHeight) {
-    const rng = this.rng
+  // Decorates one building. `faces` are the sides that front a street. Every
+  // choice comes from `rng`; sign quads go into `quads` (for mesh()), and plain
+  // geometry for frames and legs into `structure`.
+  decorate({ x, z, w, d, height, faces }, { rng, quads, structure }, floorHeight) {
     const { horizontal, vertical } = this.atlas
+    // [band 0..1, seed 0..1]; the seed picks broken, flickering signs.
+    const randomSign = () => [Math.floor(rng() * BANDS) / (BANDS - 1), rng()]
+    const pick = (list) => list[Math.floor(rng() * list.length)]
     for (const face of faces) {
       const { cx, cz, half, angle } = faceFrame(face, x, z, w, d)
       const nx = Math.sin(angle)
@@ -184,7 +177,7 @@ export class SignBuilder {
         if (y + sh / 2 > height) continue
         const px = cx + nx * 0.15 + tx * along
         const pz = cz + nz * 0.15 + tz * along
-        this.quad(sw, sh, this.pick(this.atlas.horizontal), angle, px, y, pz, this.randomSign())
+        this.quad(quads, sw, sh, pick(horizontal), angle, px, y, pz, randomSign())
       }
 
       // Vertical blade sign sticking out from the wall near a corner.
@@ -196,11 +189,11 @@ export class SignBuilder {
         const y = 4 + bh / 2 + rng() * (height - bh - 6)
         const px = cx + nx * out + tx * along
         const pz = cz + nz * out + tz * along
-        const rect = this.pick(this.atlas.vertical)
-        const sign = this.randomSign()
+        const rect = pick(vertical)
+        const sign = randomSign()
         // Two single-sided quads so the text reads correctly from both sides.
-        this.quad(bw, bh, rect, angle + Math.PI / 2, px + tx * 0.07, y, pz + tz * 0.07, sign)
-        this.quad(bw, bh, rect, angle - Math.PI / 2, px - tx * 0.07, y, pz - tz * 0.07, sign)
+        this.quad(quads, bw, bh, rect, angle + Math.PI / 2, px + tx * 0.07, y, pz + tz * 0.07, sign)
+        this.quad(quads, bw, bh, rect, angle - Math.PI / 2, px - tx * 0.07, y, pz - tz * 0.07, sign)
         const facesZ = Math.abs(nz) > 0.5
         structure.push(
           new THREE.BoxGeometry(facesZ ? 0.1 : bw, bh, facesZ ? bw : 0.1).translate(px, y, pz),
@@ -210,7 +203,7 @@ export class SignBuilder {
 
     // Rooftop billboard on legs, facing one of the streets.
     if (faces.length && horizontal.length && height < 45 && rng() < 0.22) {
-      const { cx, cz, half, angle } = faceFrame(this.pick(faces), x, z, w, d)
+      const { cx, cz, half, angle } = faceFrame(pick(faces), x, z, w, d)
       const nx = Math.sin(angle)
       const nz = Math.cos(angle)
       const rw = Math.min(half * 2 - 2, 9 + rng() * 9)
@@ -219,7 +212,7 @@ export class SignBuilder {
       const y = height + lift + rh / 2
       const px = cx - nx * 1.2
       const pz = cz - nz * 1.2
-      this.quad(rw, rh, this.pick(this.atlas.horizontal), angle, px, y, pz, this.randomSign())
+      this.quad(quads, rw, rh, pick(horizontal), angle, px, y, pz, randomSign())
 
       const facesZ = Math.abs(nz) > 0.5
       const back = facesZ
@@ -239,31 +232,41 @@ export class SignBuilder {
     }
   }
 
-  build(audioField) {
-    const material = new THREE.MeshBasicMaterial({ map: this.atlas.texture })
-    material.color.setScalar(BRIGHTNESS)
-    const time = { value: 0 }
-    audioField.patch(material, {
-      vertexDeclarations: 'attribute vec2 aSign;\nvarying vec2 vSign;',
-      vertexApply: 'vSign = aSign;',
-      declarations: 'uniform float uTime;\nvarying vec2 vSign;',
-      uniforms: { uTime: time },
-      after: '#include <color_fragment>',
-      apply: /* glsl */ `
-        float signFlicker = 1.0;
-        if (vSign.y > ${(1 - BROKEN_SHARE).toFixed(3)}) {
-          float tick = floor(uTime * 14.0 + vSign.y * 100.0);
-          signFlicker = fract(sin(tick * 12.9898 + vSign.y * 78.233) * 43758.5453) > 0.3 ? 1.0 : 0.12;
-        }
-        // Signs pulse more gently than windows so the text stays readable.
-        diffuseColor.rgb *= signFlicker * mix(1.0, audioGain(vSign.x), 0.6);`,
-    })
-    const mesh = new THREE.Mesh(mergeGeometries(this.quads), material)
-    return {
-      mesh,
-      update(elapsed) {
-        time.value = elapsed
-      },
-    }
+}
+
+// Neon signs for the city's buildings: draws the atlas, and owns the one
+// material every chunk's signs share.
+export class SignBuilder extends SignLayout {
+  // `rng` lays out the atlas (its colours and styles).
+  constructor(rng, maxAnisotropy, audioField) {
+    const { texture, horizontal, vertical } = createAtlas(rng, maxAnisotropy)
+    super({ horizontal, vertical })
+    this.time = { value: 0 }
+    this.material = createMaterial(texture, audioField, this.time)
   }
+
+  update(elapsed) {
+    this.time.value = elapsed
+  }
+}
+
+function createMaterial(texture, audioField, time) {
+  const material = new THREE.MeshBasicMaterial({ map: texture })
+  material.color.setScalar(BRIGHTNESS)
+  audioField.patch(material, {
+    vertexDeclarations: 'attribute vec2 aSign;\nvarying vec2 vSign;',
+    vertexApply: 'vSign = aSign;',
+    declarations: 'uniform float uTime;\nvarying vec2 vSign;',
+    uniforms: { uTime: time },
+    after: '#include <color_fragment>',
+    apply: /* glsl */ `
+      float signFlicker = 1.0;
+      if (vSign.y > ${(1 - BROKEN_SHARE).toFixed(3)}) {
+        float tick = floor(uTime * 14.0 + vSign.y * 100.0);
+        signFlicker = fract(sin(tick * 12.9898 + vSign.y * 78.233) * 43758.5453) > 0.3 ? 1.0 : 0.12;
+      }
+      // Signs pulse more gently than windows so the text stays readable.
+      diffuseColor.rgb *= signFlicker * mix(1.0, audioGain(vSign.x), 0.6);`,
+  })
+  return material
 }

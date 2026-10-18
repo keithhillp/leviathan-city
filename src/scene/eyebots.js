@@ -12,7 +12,7 @@ const BEAM_FADE = 4 // per second
 
 // A failed scan: the beam flashes red, then the bot fires on the spot it was
 // scanning and sets it alight.
-const FAIL_CHANCE = 0.2
+const FAIL_CHANCE = 0.05
 const ALARM_TIME = 0.9 // seconds of red flashing before it opens fire
 const SHOTS = 6
 const SHOT_INTERVAL = 0.12

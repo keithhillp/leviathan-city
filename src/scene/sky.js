@@ -23,6 +23,7 @@ const STRIKE_LENGTH = 0.3
 
 // Behind the tower, high over the city.
 const BOLT = { distance: [260, 420], spread: 320, top: 320, bottom: 50, width: 1.6 }
+const SPIRE_STRIKE_CHANCE = 0.4 // of a strike hitting Leviathan's spire instead
 
 // A jagged ribbon from the sky down towards the skyline, with a few branches,
 // built flat facing the plaza.
@@ -55,7 +56,8 @@ function boltGeometry() {
   return geometry
 }
 
-export function createSky(scene) {
+// `spire` (a Vector3, optional) is somewhere lightning likes to strike.
+export function createSky(scene, { spire = null } = {}) {
   const group = new THREE.Group()
   const haze = scene.background.clone()
 
@@ -75,25 +77,32 @@ export function createSky(scene) {
   let strikeTime = Infinity // seconds since the current strike began
   let sinceStrike = STRIKE_COOLDOWN
 
-  function strike() {
+  // The bolt is flat, so it's turned to face whoever's watching.
+  function strike(viewer) {
     bolt.geometry.dispose()
     bolt.geometry = boltGeometry()
-    const [near, far] = BOLT.distance
-    bolt.position.set((Math.random() - 0.5) * BOLT.spread * 2, 0, -(near + Math.random() * (far - near)))
+    if (spire && Math.random() < SPIRE_STRIKE_CHANCE) {
+      bolt.position.set(spire.x, spire.y - BOLT.bottom, spire.z)
+    } else {
+      const [near, far] = BOLT.distance
+      bolt.position.set((Math.random() - 0.5) * BOLT.spread * 2, 0, -(near + Math.random() * (far - near)))
+    }
+    bolt.rotation.y = Math.atan2(viewer.x - bolt.position.x, viewer.z - bolt.position.z)
     strikeTime = 0
     sinceStrike = 0
   }
 
   return {
     group,
-    update(delta, analysis) {
+    // `viewer` is the camera's position.
+    update(delta, analysis, viewer) {
       const heavy = 1 - analysis.calm
       const target = heavy * THREE.MathUtils.smoothstep(analysis.levels.bass, BASS_FROM, BASS_FULL)
       red += (target - red) * Math.min(1, delta * (target > red ? RED_RISE : RED_FALL))
 
       sinceStrike += delta
       const kickStrike = analysis.beat && heavy > 0.6 && Math.random() < KICK_STRIKE_CHANCE
-      if ((analysis.surge || kickStrike) && sinceStrike > STRIKE_COOLDOWN) strike()
+      if ((analysis.surge || kickStrike) && sinceStrike > STRIKE_COOLDOWN) strike(viewer)
 
       strikeTime += delta
       const flash = FLASHES.some(([start, length]) => strikeTime >= start && strikeTime < start + length) ? 1 : 0
